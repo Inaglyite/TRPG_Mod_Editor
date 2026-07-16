@@ -49,4 +49,28 @@ describe("editor store", () => {
     expect(updated.module.scenes.opening_scene.npcs_present).toEqual([]);
     expect(updated.module.clues.witness.related_npcs).toEqual([]);
   });
+
+  it("renames scene IDs and rewrites references atomically", () => {
+    const project = structuredClone(useEditorStore.getState().project);
+    project.module.npcs.keeper = {
+      name: "守门人", visible_tags: [], secret: "", hp: 10, max_hp: 10,
+      disposition: "neutral", current_location: "opening_scene", attributes: {}, skills: {},
+      conditions: [], spells: [], notes: "", asset_id: null, initial_reveal: 0,
+      initial_reveal_entries: [], extensions: {},
+    };
+    useEditorStore.getState().replaceProject(project, false);
+
+    expect(useEditorStore.getState().renameEntity("scene", "opening_scene", "prologue")).toBe(true);
+    const updated = useEditorStore.getState().project.module;
+    expect(updated.entry_scene_id).toBe("prologue");
+    expect(updated.npcs.keeper.current_location).toBe("prologue");
+    expect(updated.scenes.prologue).toBeDefined();
+  });
+
+  it("duplicates an entity into an independent copy", () => {
+    useEditorStore.getState().duplicateEntity("scene", "opening_scene");
+    const selected = useEditorStore.getState().selection.id!;
+    useEditorStore.getState().project.module.scenes[selected].name = "mutated outside action";
+    expect(useEditorStore.getState().project.module.scenes.opening_scene.name).not.toBe("mutated outside action");
+  });
 });

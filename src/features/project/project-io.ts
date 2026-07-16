@@ -1,7 +1,8 @@
 import { createDefaultProject } from "../../domain/default-project";
 import type { EditorProject } from "../../domain/types";
 
-export const DRAFT_STORAGE_KEY = "trpg-mod-editor:draft:v1";
+export const DRAFT_STORAGE_KEY = "trpg-mod-editor:draft:v2";
+const LEGACY_DRAFT_STORAGE_KEY = "trpg-mod-editor:draft:v1";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -11,18 +12,29 @@ export function parseEditorProject(value: unknown): EditorProject {
   if (!isRecord(value) || !isRecord(value.manifest) || !isRecord(value.module)) {
     throw new Error("文件不是有效的 TRPG Mod Editor 工程");
   }
-  if (value.editor_version !== 1) {
-    throw new Error("当前只支持 editor_version 1");
+  if (value.editor_version !== 1 && value.editor_version !== 2) {
+    throw new Error("当前只支持 editor_version 1 或 2");
   }
   if (!isRecord(value.module.scenes)) {
     throw new Error("工程缺少 module.scenes");
   }
-  return value as unknown as EditorProject;
+  if (value.editor_version === 1) {
+    return {
+      ...(structuredClone(value) as unknown as Omit<EditorProject, "editor_version" | "lorebook">),
+      editor_version: 2,
+      lorebook: isRecord(value.lorebook) ? value.lorebook : null,
+    };
+  }
+  return {
+    ...(value as unknown as EditorProject),
+    lorebook: isRecord(value.lorebook) ? value.lorebook : null,
+  };
 }
 
 export function loadDraft(): EditorProject {
   if (typeof window === "undefined") return createDefaultProject();
-  const serialized = window.localStorage.getItem(DRAFT_STORAGE_KEY);
+  const serialized = window.localStorage.getItem(DRAFT_STORAGE_KEY)
+    ?? window.localStorage.getItem(LEGACY_DRAFT_STORAGE_KEY);
   if (!serialized) return createDefaultProject();
   try {
     return parseEditorProject(JSON.parse(serialized));

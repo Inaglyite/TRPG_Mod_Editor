@@ -1,8 +1,11 @@
 import {
   BookOpenText,
   Download,
+  CopyPlus,
   FilePlus2,
   FolderOpen,
+  History,
+  PlayCircle,
   Redo2,
   ShieldCheck,
   Undo2,
@@ -21,6 +24,9 @@ interface TopBarProps {
   onUndo: () => void;
   onRedo: () => void;
   onValidate: () => void;
+  onRecent: () => void;
+  onCompile: () => void;
+  onSaveAs: () => void;
 }
 
 export function TopBar(props: TopBarProps) {
@@ -52,9 +58,17 @@ export function TopBar(props: TopBarProps) {
             <FolderOpen size={17} />
             <span>打开</span>
           </button>
+          <button type="button" className="tool-button" onClick={props.onRecent} title="最近工程">
+            <History size={17} />
+            <span>最近</span>
+          </button>
           <button type="button" className="tool-button" onClick={props.onExport} title="导出工程 JSON">
             <Download size={17} />
             <span>导出</span>
+          </button>
+          <button type="button" className="tool-button" onClick={props.onSaveAs} title="另存为新的工程会话">
+            <CopyPlus size={17} />
+            <span>另存为</span>
           </button>
         </div>
         <div className="action-group compact" aria-label="历史操作">
@@ -86,6 +100,10 @@ export function TopBar(props: TopBarProps) {
         >
           <ShieldCheck size={17} />
           <span>{props.errorCount > 0 ? `${props.errorCount} 项错误` : "校验通过"}</span>
+        </button>
+        <button type="button" className="validate-button" onClick={props.onCompile}>
+          <PlayCircle size={17} />
+          <span>权威编译</span>
         </button>
       </div>
     </header>

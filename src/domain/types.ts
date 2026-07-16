@@ -9,7 +9,7 @@ export type ModuleCapability =
 export type ClueCategory = "investigation" | "event" | "task" | "npc";
 export type ClueType = "obvious" | "hidden" | "inferred";
 export type EndingType = "good" | "neutral" | "bad" | "secret";
-export type EntityKind = "manifest" | "scene" | "npc" | "clue" | "ending";
+export type EntityKind = "manifest" | "content" | "scene" | "npc" | "clue" | "ending";
 
 export interface ModuleManifest {
   $schema: typeof MANIFEST_SCHEMA_URI;
@@ -28,6 +28,7 @@ export interface ModuleManifest {
   entry: "module.json";
   keeper_document: "keeper.md" | null;
   theme: "theme.json" | null;
+  lorebook?: "lorebook.json" | null;
   capabilities: ModuleCapability[];
   tags: string[];
   created_with: string;
@@ -147,14 +148,16 @@ export interface ModuleDefinition {
   };
   clue_links: ClueLinkDefinition[];
   extensions: Record<string, unknown>;
+  progression?: Record<string, unknown>;
 }
 
 export interface EditorProject {
-  editor_version: 1;
+  editor_version: 2;
   manifest: ModuleManifest;
   module: ModuleDefinition;
   keeperDocument: string;
   theme: Record<string, unknown>;
+  lorebook: Record<string, unknown> | null;
 }
 
 export interface EntitySelection {

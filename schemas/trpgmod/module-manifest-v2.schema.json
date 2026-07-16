@@ -2,14 +2,14 @@
   "additionalProperties": false,
   "properties": {
     "$schema": {
-      "const": "https://trpg-master.local/schemas/module-manifest-v1.json",
-      "default": "https://trpg-master.local/schemas/module-manifest-v1.json",
+      "const": "https://trpg-master.local/schemas/module-manifest-v2.json",
+      "default": "https://trpg-master.local/schemas/module-manifest-v2.json",
       "title": "$Schema",
       "type": "string"
     },
     "format_version": {
-      "const": "1.0",
-      "default": "1.0",
+      "const": "2.0",
+      "default": "2.0",
       "title": "Format Version",
       "type": "string"
     },
@@ -153,8 +153,8 @@
     "version",
     "title"
   ],
-  "title": "ModuleManifest",
+  "title": "ModuleManifestV2",
   "type": "object",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://trpg-master.local/schemas/module-manifest-v1.json"
+  "$id": "https://trpg-master.local/schemas/module-manifest-v2.json"
 }

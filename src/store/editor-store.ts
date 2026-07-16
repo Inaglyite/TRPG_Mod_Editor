@@ -7,6 +7,7 @@ import type {
   EntityKind,
   EntitySelection,
   ModuleManifest,
+  ModuleDefinition,
   NpcDefinition,
   SceneDefinition,
 } from "../domain/types";
@@ -29,12 +30,19 @@ interface EditorStore {
   redo: () => void;
   updateManifest: (manifest: ModuleManifest) => void;
   updateOpeningPrompt: (openingPrompt: string) => void;
+  updateProjectContent: (content: Pick<EditorProject, "keeperDocument" | "theme" | "lorebook"> & {
+    initialState: ModuleDefinition["initial_state"];
+    assets: ModuleDefinition["assets"];
+    progression: Record<string, unknown>;
+  }) => void;
   updateScene: (id: string, scene: SceneDefinition) => void;
   updateNpc: (id: string, npc: NpcDefinition) => void;
   updateClue: (id: string, clue: ClueDefinition) => void;
   updateEnding: (id: string, ending: EndingDefinition) => void;
-  addEntity: (kind: Exclude<EntityKind, "manifest">) => void;
-  removeEntity: (kind: Exclude<EntityKind, "manifest">, id: string) => void;
+  addEntity: (kind: Exclude<EntityKind, "manifest" | "content">) => void;
+  removeEntity: (kind: Exclude<EntityKind, "manifest" | "content">, id: string) => void;
+  renameEntity: (kind: Exclude<EntityKind, "manifest" | "content">, id: string, nextId: string) => boolean;
+  duplicateEntity: (kind: Exclude<EntityKind, "manifest" | "content">, id: string) => void;
 }
 
 function snapshot(project: EditorProject): string {
@@ -137,6 +145,18 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       if (state.project.module.opening_prompt === openingPrompt) return state;
       const project = cloneProject(state.project);
       project.module.opening_prompt = openingPrompt;
+      return commit(state, project);
+    }),
+
+  updateProjectContent: (content) =>
+    set((state) => {
+      const project = cloneProject(state.project);
+      project.keeperDocument = content.keeperDocument;
+      project.theme = content.theme;
+      project.lorebook = content.lorebook;
+      project.module.initial_state = content.initialState;
+      project.module.assets = content.assets;
+      project.module.progression = content.progression;
       return commit(state, project);
     }),
 
@@ -269,6 +289,59 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         delete project.module.endings[id];
       }
       return commit(state, project, { kind: "manifest" });
+    }),
+
+  renameEntity: (kind, id, requestedId) => {
+    const next = requestedId.trim();
+    if (!/^[a-z][a-z0-9_-]*$/i.test(next)) return false;
+    const state = get();
+    const collection = kind === "scene" ? state.project.module.scenes
+      : kind === "npc" ? state.project.module.npcs
+      : kind === "clue" ? state.project.module.clues
+      : state.project.module.endings;
+    if (!(id in collection) || (next !== id && next in collection)) return false;
+    if (next === id) return true;
+    const project = cloneProject(state.project);
+    if (kind === "scene") {
+      project.module.scenes[next] = project.module.scenes[id];
+      delete project.module.scenes[id];
+      if (project.module.entry_scene_id === id) project.module.entry_scene_id = next;
+      for (const scene of Object.values(project.module.scenes)) scene.exits = scene.exits.map((value) => value === id ? next : value);
+      for (const npc of Object.values(project.module.npcs)) if (npc.current_location === id) npc.current_location = next;
+      for (const clue of Object.values(project.module.clues)) clue.related_scenes = clue.related_scenes.map((value) => value === id ? next : value);
+    } else if (kind === "npc") {
+      project.module.npcs[next] = project.module.npcs[id];
+      delete project.module.npcs[id];
+      for (const scene of Object.values(project.module.scenes)) scene.npcs_present = scene.npcs_present.map((value) => value === id ? next : value);
+      for (const clue of Object.values(project.module.clues)) clue.related_npcs = clue.related_npcs.map((value) => value === id ? next : value);
+    } else if (kind === "clue") {
+      project.module.clues[next] = project.module.clues[id];
+      delete project.module.clues[id];
+      project.module.initial_state.known_clue_ids = project.module.initial_state.known_clue_ids.map((value) => value === id ? next : value);
+      project.module.clue_links = project.module.clue_links.map((link) => ({ ...link, from: link.from === id ? next : link.from, to: link.to === id ? next : link.to }));
+    } else {
+      project.module.endings[next] = project.module.endings[id];
+      delete project.module.endings[id];
+    }
+    set(commit(state, project, { kind, id: next }));
+    return true;
+  },
+
+  duplicateEntity: (kind, id) =>
+    set((state) => {
+      const project = cloneProject(state.project);
+      const collection = kind === "scene" ? project.module.scenes
+        : kind === "npc" ? project.module.npcs
+        : kind === "clue" ? project.module.clues
+        : project.module.endings;
+      if (!(id in collection)) return state;
+      const next = nextId(id, collection);
+      collection[next] = structuredClone(collection[id]) as never;
+      const entity = collection[next] as { name?: string; title?: string; text?: string };
+      if (entity.name) entity.name += "（副本）";
+      else if (entity.title) entity.title += "（副本）";
+      else if (entity.text) entity.text += "（副本）";
+      return commit(state, project, { kind, id: next });
     }),
 }));
 

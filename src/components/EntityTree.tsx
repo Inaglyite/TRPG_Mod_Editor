@@ -5,8 +5,11 @@ import {
   CircleUserRound,
   Clapperboard,
   FileText,
+  Settings2,
   Flag,
   Plus,
+  Copy,
+  Pencil,
   Search,
 } from "lucide-react";
 import { useState, type ReactNode } from "react";
@@ -16,17 +19,21 @@ interface EntityTreeProps {
   project: EditorProject;
   selection: EntitySelection;
   onSelect: (selection: EntitySelection) => void;
-  onAdd: (kind: Exclude<EntityKind, "manifest">) => void;
+  onAdd: (kind: Exclude<EntityKind, "manifest" | "content">) => void;
+  onRename: (kind: Exclude<EntityKind, "manifest" | "content">, id: string, nextId: string) => boolean;
+  onDuplicate: (kind: Exclude<EntityKind, "manifest" | "content">, id: string) => void;
 }
 
 interface TreeSectionProps {
   label: string;
-  kind: Exclude<EntityKind, "manifest">;
+  kind: Exclude<EntityKind, "manifest" | "content">;
   icon: ReactNode;
   entities: Array<[string, string]>;
   selection: EntitySelection;
   onSelect: (selection: EntitySelection) => void;
-  onAdd: (kind: Exclude<EntityKind, "manifest">) => void;
+  onAdd: (kind: Exclude<EntityKind, "manifest" | "content">) => void;
+  onRename: EntityTreeProps["onRename"];
+  onDuplicate: EntityTreeProps["onDuplicate"];
 }
 
 function TreeSection(props: TreeSectionProps) {
@@ -51,15 +58,23 @@ function TreeSection(props: TreeSectionProps) {
       </div>
       <div className="tree-items">
         {props.entities.map(([id, label]) => (
+          <div className={`tree-item${props.selection.kind === props.kind && props.selection.id === id ? " is-active" : ""}`} key={id}>
           <button
             type="button"
-            className={`tree-item${props.selection.kind === props.kind && props.selection.id === id ? " is-active" : ""}`}
-            key={id}
+            className="tree-item-main"
             onClick={() => props.onSelect({ kind: props.kind, id })}
           >
             <span>{label || "未命名"}</span>
             <code>{id}</code>
           </button>
+          {props.selection.kind === props.kind && props.selection.id === id && <span className="tree-item-actions">
+            <button type="button" title="复制实体" onClick={() => props.onDuplicate(props.kind, id)}><Copy size={13} /></button>
+            <button type="button" title="重命名 ID" onClick={() => {
+              const next = window.prompt("输入新 ID（引用会自动重构）", id);
+              if (next && !props.onRename(props.kind, id, next)) window.alert("ID 格式无效或已存在");
+            }}><Pencil size={13} /></button>
+          </span>}
+          </div>
         ))}
         {props.entities.length === 0 && <div className="tree-empty">暂无内容</div>}
       </div>
@@ -67,7 +82,7 @@ function TreeSection(props: TreeSectionProps) {
   );
 }
 
-export function EntityTree({ project, selection, onSelect, onAdd }: EntityTreeProps) {
+export function EntityTree({ project, selection, onSelect, onAdd, onRename, onDuplicate }: EntityTreeProps) {
   const [query, setQuery] = useState("");
   const normalizedQuery = query.trim().toLocaleLowerCase();
 
@@ -110,6 +125,14 @@ export function EntityTree({ project, selection, onSelect, onAdd }: EntityTreePr
           <FileText size={16} />
           <span>模组设置</span>
         </button>
+        <button
+          type="button"
+          className={`tree-root-item${selection.kind === "content" ? " is-active" : ""}`}
+          onClick={() => onSelect({ kind: "content" })}
+        >
+          <Settings2 size={16} />
+          <span>世界与素材</span>
+        </button>
         <TreeSection
           label="场景"
           kind="scene"
@@ -118,6 +141,8 @@ export function EntityTree({ project, selection, onSelect, onAdd }: EntityTreePr
           selection={selection}
           onSelect={onSelect}
           onAdd={onAdd}
+          onRename={onRename}
+          onDuplicate={onDuplicate}
         />
         <TreeSection
           label="人物"
@@ -127,6 +152,8 @@ export function EntityTree({ project, selection, onSelect, onAdd }: EntityTreePr
           selection={selection}
           onSelect={onSelect}
           onAdd={onAdd}
+          onRename={onRename}
+          onDuplicate={onDuplicate}
         />
         <TreeSection
           label="线索"
@@ -136,6 +163,8 @@ export function EntityTree({ project, selection, onSelect, onAdd }: EntityTreePr
           selection={selection}
           onSelect={onSelect}
           onAdd={onAdd}
+          onRename={onRename}
+          onDuplicate={onDuplicate}
         />
         <TreeSection
           label="结局"
@@ -145,6 +174,8 @@ export function EntityTree({ project, selection, onSelect, onAdd }: EntityTreePr
           selection={selection}
           onSelect={onSelect}
           onAdd={onAdd}
+          onRename={onRename}
+          onDuplicate={onDuplicate}
         />
       </nav>
     </aside>

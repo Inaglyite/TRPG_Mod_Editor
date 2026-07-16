@@ -72,13 +72,13 @@ E0 使用 `.trpgmod-project.json` 作为编辑器草稿交换文件，并在 Loc
 `schema_version` 分开。打开旧工程时先迁移编辑器容器，再由模组适配器迁移作者数据；保存不得直接
 覆盖无法无损降级的原文件。
 
-E1 将增加后端工程会话：
+E1 已增加后端工程会话。当前保存完整版本化 EditorProject，并以 `expected_revision` 实现乐观并发控制：
 
 ```text
 PATCH /api/editor/projects/{session}
 {
   "expected_revision": 12,
-  "operations": [...]
+  "project": {...}
 }
 ```
 

@@ -1,0 +1,12 @@
+{
+  "source": "https://github.com/Inaglyite/TRPG-Master",
+  "commit": "da55ed0bceee1d0ee6602d5b55c40bc5f2fee2a2",
+  "generated_by": "tools/module_packager.py schema",
+  "files": {
+    "lorebook-v3.schema.json": "43d735104a43aa0ce33f932c963550e69232884d2c9f0f20e0955ac0eda74a61",
+    "module-manifest-v1.schema.json": "be8c93895f5e1f36f83789e617623d63551ab65c41932eb8d01c38584e65c60a",
+    "module-manifest-v2.schema.json": "f916af4ecb3696ec0a0a5b4bf2b8b49a304f6d9a8810e372a23d10863ecd7b05",
+    "module-v1.schema.json": "42ef09146757fa8e5357011acaae7ecd93b83443e1ef5bc78b97884f5bd37474",
+    "module-v2.schema.json": "30c1ee514aa7d256c5aeb47cc3a346cfeda03374cb1e6ac979db2f1b207555a4"
+  }
+}

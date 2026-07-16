@@ -6,7 +6,7 @@ import {
 
 export function createDefaultProject(): EditorProject {
   return {
-    editor_version: 1,
+    editor_version: 2,
     manifest: {
       $schema: MANIFEST_SCHEMA_URI,
       format_version: "1.0",
@@ -24,6 +24,7 @@ export function createDefaultProject(): EditorProject {
       entry: "module.json",
       keeper_document: "keeper.md",
       theme: "theme.json",
+      lorebook: null,
       capabilities: [],
       tags: [],
       created_with: "TRPG Mod Editor 0.1.0",
@@ -94,5 +95,6 @@ export function createDefaultProject(): EditorProject {
         gold: "#c8a24e",
       },
     },
+    lorebook: null,
   };
 }
