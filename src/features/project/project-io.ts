@@ -279,16 +279,21 @@ export function saveDraft(project: EditorProject): void {
   window.localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(project));
 }
 
-export async function readProjectFile(
-  file: File,
-): Promise<{ project: EditorProject; migrationReport: MigrationReport | null }> {
+/** 解析工程 JSON 文本（浏览器 File 与 Electron 桌面文件共用）。 */
+export function parseProjectText(text: string): { project: EditorProject; migrationReport: MigrationReport | null } {
   let parsed: unknown;
   try {
-    parsed = JSON.parse(await file.text());
+    parsed = JSON.parse(text);
   } catch (error) {
     throw new Error("工程文件不是有效 JSON", { cause: error });
   }
   return parseEditorProjectWithReport(parsed);
+}
+
+export async function readProjectFile(
+  file: File,
+): Promise<{ project: EditorProject; migrationReport: MigrationReport | null }> {
+  return parseProjectText(await file.text());
 }
 
 export function downloadProject(project: EditorProject): void {

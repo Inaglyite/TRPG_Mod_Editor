@@ -927,6 +927,88 @@ select:focus-visible {
 }
 
 .project-dialog > header > div { display: flex; align-items: center; gap: 8px; }
+
+.release-dialog {
+  width: min(680px, 100%);
+  max-height: min(720px, 86vh);
+}
+
+.release-body {
+  display: grid;
+  gap: 12px;
+  padding: 14px 16px 18px;
+  overflow: auto;
+}
+
+.release-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 12px;
+}
+
+.update-chip {
+  padding: 2px 8px;
+  border-radius: 9px;
+  font-size: 11px;
+}
+
+.update-available { color: var(--amber); background: var(--amber-wash); }
+.update-current { color: var(--teal); background: var(--teal-wash); }
+
+.release-items {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.release-item {
+  display: grid;
+  grid-template-columns: 22px minmax(160px, auto) 1fr;
+  align-items: baseline;
+  gap: 8px;
+  padding: 9px 11px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--canvas);
+}
+
+.release-item small {
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+.release-status {
+  text-align: center;
+  font-weight: 800;
+}
+
+.release-label { font-weight: 700; font-size: 12px; }
+
+.release-item.is-pass { border-color: var(--border); }
+.release-item.is-pass .release-status { color: var(--teal); }
+.release-item.is-warn { border-color: var(--amber); }
+.release-item.is-warn .release-status { color: var(--amber); }
+.release-item.is-fail { border-color: var(--red); }
+.release-item.is-fail .release-status { color: var(--red); }
+
+.release-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.release-failures {
+  margin: 0;
+  color: var(--red);
+  font-size: 12px;
+}
+
 .recent-project-list { display: grid; gap: 6px; padding: 10px; overflow: auto; }
 .recent-project-list > button {
   display: flex;

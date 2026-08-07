@@ -116,9 +116,17 @@ editor-backend.ts
 ```
 
 `updateProjectSession` 携带 `expected_revision`，409 时抛出 `RevisionConflictError` 并携带服务器
-最新会话供冲突恢复。浏览器开发环境和未来 Electron 使用同一个适配器层，分别由 HTTP 与 preload
-实现。`.trpgmod` 打包导出与试玩（`exportPackage`/`startPlaytest`）尚未实现，计划在 E3 通过后端
-权威 packager/API 完成。
+最新会话供冲突恢复。`.trpgmod` 打包导出与试玩（`exportPackage`/`startPlaytest`）尚未实现，计划在
+E3 通过后端权威 packager/API 完成。
+
+### 6.1 桌面宿主（Electron）
+
+浏览器与桌面共用渲染进程，通过 `src/services/host.ts` 的 `window.editorHost` 窄权限桥区分能力：
+浏览器环境没有该对象，打开/导出自动回退到 `<input>`/下载；桌面环境走 `electron/` 主进程的
+IPC handler（系统对话框 + 文件读写）。主进程只暴露白名单方法，渲染进程不接触 Node/fs API；
+`contextIsolation`、`sandbox` 开启，生产构建注入 CSP。工程目录记忆在 `userData/settings.json`，
+由 `electron/projects-dir.ts` 管理（纯逻辑可单测）。自动更新使用 electron-updater（GitHub
+provider），仅对已安装的桌面版启用；dev 运行返回占位状态。
 
 ## 7. 游戏运行时边界
 

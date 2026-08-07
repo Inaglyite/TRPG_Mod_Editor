@@ -1,8 +1,8 @@
 # 开发路线图
 
 - 更新日期：2026-08-07
-- 当前基线：E1.5 契约收敛（0.3），Schema 锁定到 TRPG Master `da55ed0`
-- 当前优先级：素材与关系图（E2），然后通过后端权威 packager 打通 `.trpgmod` 导出与试玩（E3）
+- 当前基线：E4 桌面发布（0.3），Schema 锁定到 TRPG Master `da55ed0`
+- 当前优先级：E3 打包导出打通 `.trpgmod` 闭环，然后 E2 素材与关系图
 
 ## E0：可运行骨架
 
@@ -63,3 +63,11 @@ Ctrl+S 与导出语义混淆、结构化配置草稿被无关动作清空、mani
 - Windows/Linux 工程目录选择和导出位置选择。
 - 自动恢复、发布检查单和错误报告导出。
 - 安装包、升级兼容和大型模组稳定性验收。
+
+状态：已完成（0.3）。Electron 43 桌面壳（原生 Vite 8 + tsc 构建，不引入 electron-vite）：
+`contextIsolation`/`sandbox` 窄权限 preload IPC、系统对话框打开/保存/导出、工程目录选择与最近目录
+记忆（userData/settings.json）、原生菜单、单实例锁、窗口状态记忆、生产 CSP 注入；渲染进程新增发布
+检查单（结构/许可证/作者/主页/SemVer/引擎版本/素材与 capability 一致性）与一键错误报告导出；
+electron-updater（GitHub provider）集成，检查更新对已安装桌面版启用。Linux AppImage + deb 已实际
+构建验证；Windows NSIS 安装包已在 Windows 机器构建产出。自动更新完整链路（发布 Release、签名）
+与大型模组稳定性验收留待正式发布时进行。

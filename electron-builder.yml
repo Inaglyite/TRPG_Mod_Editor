@@ -1,0 +1,29 @@
+appId: xyz.trpggame.mod-editor
+productName: TRPG Mod Editor
+directories:
+  output: release
+files:
+  - dist/**
+  - dist-electron/**
+  - package.json
+asar: true
+linux:
+  target:
+    - AppImage
+    - deb
+  category: Game
+  maintainer: Inaglyite
+  synopsis: TRPG Master 独立模组编辑器
+  description: 可视化编辑 TRPG Master 模组并同步到工程会话。
+  syncDesktopName: true
+win:
+  target:
+    - nsis
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  perMachine: false
+publish:
+  provider: github
+  owner: Inaglyite
+  repo: TRPG_Mod_Editor

@@ -22,4 +22,11 @@ export default tseslint.config(
       "react-refresh/only-export-components": ["warn", { allowConstantExport: true }],
     },
   },
+  {
+    // Electron 主进程与 preload 是 Node 环境
+    files: ["electron/**/*.ts"],
+    languageOptions: {
+      globals: globals.node,
+    },
+  },
 );

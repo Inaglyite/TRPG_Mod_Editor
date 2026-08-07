@@ -6,11 +6,14 @@ import { TopBar } from "../components/TopBar";
 import { RecentProjectsDialog } from "../components/RecentProjectsDialog";
 import { NewProjectDialog, type NewProjectValues } from "../components/NewProjectDialog";
 import { validateProject } from "../domain/validation";
+import type { MigrationReport } from "../features/project/project-io";
 import {
   downloadProject,
+  parseProjectText,
   readProjectFile,
   saveDraft,
 } from "../features/project/project-io";
+import { ReleaseChecklistDialog } from "../features/release/ReleaseChecklistDialog";
 import { isProjectDirty, useEditorStore } from "../store/editor-store";
 import {
   compileProject,
@@ -20,6 +23,8 @@ import {
   RevisionConflictError,
   updateProjectSession,
 } from "../services/editor-backend";
+import { buildErrorReport } from "../services/error-report";
+import { isElectronHost, type UpdateStatus } from "../services/host";
 import { useSessionStore } from "../store/session-store";
 
 const SESSION_KEY = "trpg-mod-editor:active-session:v1";
@@ -44,6 +49,9 @@ export function App() {
   const [statusMessage, setStatusMessage] = useState("本地草稿已启用");
   const [recentOpen, setRecentOpen] = useState(false);
   const [newProjectOpen, setNewProjectOpen] = useState(false);
+  const [releaseOpen, setReleaseOpen] = useState(false);
+  const [appVersion, setAppVersion] = useState("0.3.0");
+  const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null);
   const initialized = useRef(false);
   const session = useSessionStore();
 
@@ -239,30 +247,125 @@ export function App() {
     }
   };
 
-  const handleExport = () => {
-    downloadProject(project);
-    setStatusMessage("工程 JSON 已导出");
+  const handleExport = async () => {
+    const payload = `${JSON.stringify(project, null, 2)}\n`;
+    const host = window.editorHost;
+    if (host) {
+      const result = await host.saveProjectFile(payload, `${project.manifest.id || "untitled"}.trpgmod-project.json`);
+      setStatusMessage(result.canceled ? "已取消导出" : `工程 JSON 已导出：${result.filePath}`);
+    } else {
+      downloadProject(project);
+      setStatusMessage("工程 JSON 已导出");
+    }
+  };
+
+  const applyLoadedProject = (loaded: typeof project, migrationReport: MigrationReport | null) => {
+    replaceProject(loaded, true);
+    const loadedErrors = validateProject(loaded).filter((item) => item.level === "error").length;
+    const migratedText = migrationReport
+      ? `；已从 v1 无损迁移至 v2（原工程已备份到浏览器），主线线索 ${migrationReport.essential_clue_ids.length} 条、补插 fallback ${migrationReport.inserted_fallbacks.length} 处`
+      : "";
+    setStatusMessage(
+      loadedErrors
+        ? `工程已打开，发现 ${loadedErrors} 项错误${migratedText}`
+        : `工程已打开并通过结构检查${migratedText}`,
+    );
+  };
+
+  const openProjectText = async (text: string) => {
+    try {
+      const { project: loaded, migrationReport } = parseProjectText(text);
+      applyLoadedProject(loaded, migrationReport);
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "工程文件无法打开");
+    }
   };
 
   const handleOpenFile = async (file: File) => {
     try {
       const { project: loaded, migrationReport } = await readProjectFile(file);
-      replaceProject(loaded, true);
-      const loadedErrors = validateProject(loaded).filter((item) => item.level === "error").length;
-      const migratedText = migrationReport
-        ? `；已从 v1 无损迁移至 v2（原工程已备份到浏览器），主线线索 ${migrationReport.essential_clue_ids.length} 条、补插 fallback ${migrationReport.inserted_fallbacks.length} 处`
-        : "";
-      setStatusMessage(
-        loadedErrors
-          ? `工程已打开，发现 ${loadedErrors} 项错误${migratedText}`
-          : `工程已打开并通过结构检查${migratedText}`,
-      );
+      applyLoadedProject(loaded, migrationReport);
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : "工程文件无法打开");
     } finally {
       if (fileInput.current) fileInput.current.value = "";
     }
   };
+
+  const handleOpenProject = async () => {
+    if (isElectronHost()) {
+      const result = await window.editorHost!.openProjectFile();
+      if (result.canceled || result.content === undefined) return;
+      await openProjectText(result.content);
+    } else {
+      fileInput.current?.click();
+    }
+  };
+
+  const handleCheckUpdates = async () => {
+    const host = window.editorHost;
+    if (!host) {
+      setStatusMessage("浏览器版没有自动更新");
+      return;
+    }
+    setStatusMessage("正在检查更新…");
+    try {
+      const status = await host.checkUpdates();
+      setUpdateStatus(status);
+      setStatusMessage(
+        status.error ? `检查更新失败：${status.error}` :
+          status.available ? `发现新版本 ${status.nextVersion}（当前 ${status.currentVersion}）` :
+            `已是最新版本（${status.currentVersion}）`,
+      );
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "检查更新失败");
+    }
+  };
+
+  const handleExportReport = async () => {
+    const report = buildErrorReport({
+      appVersion,
+      host: isElectronHost() ? "electron" : "browser",
+      generatedAt: new Date().toISOString(),
+      project: {
+        id: project.manifest.id,
+        version: project.manifest.version,
+        title: project.manifest.title,
+        formatVersion: project.module.format_version,
+      },
+      diagnostics: diagnostics.map((item) => ({ level: item.level, path: item.path, message: item.message })),
+      session: { syncState: session.syncState, revision },
+    });
+    const host = window.editorHost;
+    if (host) {
+      const result = await host.exportReportFile(report.content, report.filename);
+      setStatusMessage(result.canceled ? "已取消导出报告" : `错误报告已导出：${result.filePath}`);
+    } else {
+      const blob = new Blob([report.content], { type: "application/json;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = report.filename;
+      anchor.click();
+      URL.revokeObjectURL(url);
+      setStatusMessage("错误报告已导出");
+    }
+  };
+
+  useEffect(() => {
+    const host = window.editorHost;
+    if (!host) return;
+    void host.getAppVersion().then(setAppVersion).catch(() => {});
+    const offOpen = host.onMenu("open-project", () => void handleOpenProject());
+    const offSave = host.onMenu("save-project", () => void handleSave());
+    return () => {
+      offOpen();
+      offSave();
+    };
+    // handleOpenProject 依赖的 zustand 动作与 setStatusMessage 都稳定，
+    // 首次渲染闭包对后续工程始终有效，无需随渲染重建监听。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [handleSave]);
 
   return (
     <div className="app-shell">
@@ -277,8 +380,8 @@ export function App() {
         onNew={() => {
           if (!dirty || window.confirm("当前工程有未保存修改，仍要新建吗？")) setNewProjectOpen(true);
         }}
-        onOpen={() => fileInput.current?.click()}
-        onExport={handleExport}
+        onOpen={() => void handleOpenProject()}
+        onExport={() => void handleExport()}
         onUndo={undo}
         onRedo={redo}
         onValidate={() => {
@@ -287,6 +390,7 @@ export function App() {
         onRecent={() => void handleRecent()}
         onCompile={() => void handleCompile()}
         onSaveAs={() => void handleSaveAs()}
+        onRelease={() => setReleaseOpen(true)}
       />
       <input
         ref={fileInput}
@@ -324,6 +428,18 @@ export function App() {
       </footer>
       {recentOpen && <RecentProjectsDialog projects={session.recentProjects} onOpen={(id) => void openRemoteProject(id)} onClose={() => setRecentOpen(false)} />}
       {newProjectOpen && <NewProjectDialog onCreate={(values) => void handleNew(values)} onClose={() => setNewProjectOpen(false)} />}
+      {releaseOpen && (
+        <ReleaseChecklistDialog
+          project={project}
+          diagnostics={diagnostics}
+          appVersion={appVersion}
+          isElectron={isElectronHost()}
+          updateStatus={updateStatus}
+          onCheckUpdates={() => void handleCheckUpdates()}
+          onExportReport={() => void handleExportReport()}
+          onClose={() => setReleaseOpen(false)}
+        />
+      )}
     </div>
   );
 }

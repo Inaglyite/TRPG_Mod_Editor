@@ -1,8 +1,8 @@
 # TRPG Mod Editor
 
-TRPG Master 的独立模组编辑器。当前版本为 E1.5（0.3）：在 E1 工程会话基线之上，完成契约收敛——
-新建工程默认 `.trpgmod v2`，v1 工程打开时无损迁移，v2 与 Lorebook v3 的 Schema 与语义校验全部
-接入编辑器。
+TRPG Master 的独立模组编辑器。当前版本为 E4（0.3）：在 E1.5 契约收敛（新建工程默认 `.trpgmod v2`、
+v1 无损迁移、完整 Schema 与语义校验）之上，增加 Electron 桌面壳——本地文件打开/保存、工程目录记忆、
+发布检查单、错误报告导出与自动更新集成，并产出 Linux（AppImage/deb）与 Windows（NSIS）安装包。
 
 ## 当前能力
 
@@ -21,9 +21,31 @@ TRPG Master 的独立模组编辑器。当前版本为 E1.5（0.3）：在 E1 �
 - 编辑 Keeper 文档并进行不执行 HTML 的安全预览；无损编辑初始调查员、Flags、案件时钟、素材映射、
   Lorebook、progression 与主题结构；NPC 的属性、技能、状态、法术与初始揭示条目为细粒度表单。
 - 导入、导出 `.trpgmod-project.json` 编辑工程。
+- 发布检查单：汇总结构错误、许可证/作者/主页、SemVer、引擎版本、素材与 capability 一致性，
+  一键导出 JSON 错误报告。
 
-编辑器不直接生成 `.trpgmod` ZIP。正式压包、素材复制和本地试玩将在 E3 通过 TRPG Master 后端的
-权威 packager/API 完成，避免浏览器端维护第二套打包规则。
+## 桌面版（Electron）
+
+桌面壳是浏览器版的薄外壳：同一个渲染进程，通过 `electron/` 主进程的窄权限 preload/IPC 提供系统
+能力，不改变数据边界。
+
+- 本地文件打开/保存/导出走系统对话框（`window.editorHost`），浏览器环境自动回退到 `<input>`/下载。
+- 工程目录选择与最近目录记忆（`userData/settings.json`）。
+- 原生菜单（文件/帮助）、单实例锁、窗口状态记忆。
+- 发布检查单内可检查更新（electron-updater，GitHub Releases；仅对已安装的桌面版启用）。
+- 生产构建注入 CSP；`contextIsolation`、`sandbox` 开启，渲染进程不接触 Node API。
+
+### 开发与构建
+
+```bash
+npm run dev:electron   # Vite dev + tsc watch + Electron（加载 http://127.0.0.1:4173）
+npm run build:electron # tsc 编译主进程 + 渲染构建 + CSP 注入
+npm run dist:linux     # Linux AppImage + deb（release/）
+npm run dist:win       # Windows NSIS 安装包（需在 Windows 上执行）
+```
+
+桌面代码位于 `electron/`（主进程、preload、IPC 通道与目录设置），纯逻辑有独立单元测试；
+`scripts/dev-electron.mjs` 与 `scripts/inject-csp.mjs` 负责开发启动与生产 CSP 注入。
 
 ## 开发
 
@@ -59,8 +81,10 @@ src/
 ├── domain/              版本化类型、默认工程和诊断规则
 ├── features/editors/    Manifest、场景、NPC、线索与结局编辑器
 ├── features/project/    草稿、v1→v2 迁移、工程导入和工程导出
-├── services/            TRPG Master 工程会话与编译适配器
+├── features/release/    发布检查单与错误报告
+├── services/            TRPG Master 工程会话、编译适配器与桌面宿主接口
 └── store/               Zustand 命令历史、编辑与同步状态
+electron/                Electron 主进程、preload、IPC 通道与目录设置
 schemas/trpgmod/          从指定 TRPG Master 基线生成的版本化 JSON Schema
 examples/                 可打包的示例模组源文件
 docs/                     架构和开发路线图

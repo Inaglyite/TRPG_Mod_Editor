@@ -1,5 +1,6 @@
 import {
   BookOpenText,
+  ClipboardCheck,
   Download,
   CopyPlus,
   FilePlus2,
@@ -28,6 +29,7 @@ interface TopBarProps {
   onRecent: () => void;
   onCompile: () => void;
   onSaveAs: () => void;
+  onRelease: () => void;
 }
 
 export function TopBar(props: TopBarProps) {
@@ -105,6 +107,10 @@ export function TopBar(props: TopBarProps) {
         <button type="button" className="validate-button" onClick={props.onCompile}>
           <PlayCircle size={17} />
           <span>权威编译</span>
+        </button>
+        <button type="button" className="validate-button" onClick={props.onRelease} title="发布检查单">
+          <ClipboardCheck size={17} />
+          <span>发布检查</span>
         </button>
       </div>
     </header>
