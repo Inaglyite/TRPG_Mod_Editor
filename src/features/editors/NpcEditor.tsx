@@ -1,16 +1,40 @@
-import { CircleUserRound } from "lucide-react";
-import { useEffect } from "react";
-import { useForm } from "react-hook-form";
+import { CircleUserRound, Plus, X } from "lucide-react";
+import { useEffect, useState } from "react";
+import { useFieldArray, useForm } from "react-hook-form";
 import { EditorHeading } from "../../components/EditorHeading";
 import type { NpcDefinition } from "../../domain/types";
 import { useEditorStore } from "../../store/editor-store";
 import { FormField } from "./FormControls";
 
-interface NpcFormValues extends Omit<NpcDefinition, "visible_tags" | "current_location" | "max_hp" | "asset_id"> {
+interface KeyValueRow {
+  key: string;
+  value: number;
+}
+
+interface TextRow {
+  value: string;
+}
+
+interface NpcFormValues {
+  name: string;
   visibleTagsText: string;
   current_location: string;
   max_hp: number;
   asset_id: string;
+  disposition: string;
+  hp: number;
+  secret: string;
+  notes: string;
+  initial_reveal: number;
+  attributes: KeyValueRow[];
+  skills: KeyValueRow[];
+  conditions: TextRow[];
+  spells: TextRow[];
+  initialRevealEntriesText: string;
+}
+
+function toRows(record: Record<string, number>): KeyValueRow[] {
+  return Object.entries(record).map(([key, value]) => ({ key, value }));
 }
 
 function toForm(npc: NpcDefinition): NpcFormValues {
@@ -20,7 +44,20 @@ function toForm(npc: NpcDefinition): NpcFormValues {
     current_location: npc.current_location ?? "",
     max_hp: npc.max_hp ?? npc.hp,
     asset_id: npc.asset_id ?? "",
+    attributes: toRows(npc.attributes),
+    skills: toRows(npc.skills),
+    conditions: npc.conditions.map((value) => ({ value })),
+    spells: npc.spells.map((value) => ({ value })),
+    initialRevealEntriesText: JSON.stringify(npc.initial_reveal_entries, null, 2),
   };
+}
+
+function toRecord(rows: KeyValueRow[]): Record<string, number> {
+  return Object.fromEntries(
+    rows
+      .map((row) => [row.key.trim(), Number(row.value)] as const)
+      .filter(([key, value]) => key !== "" && Number.isFinite(value)),
+  );
 }
 
 export function NpcEditor({ id }: { id: string }) {
@@ -29,6 +66,11 @@ export function NpcEditor({ id }: { id: string }) {
   const removeEntity = useEditorStore((state) => state.removeEntity);
   const npc = project.module.npcs[id];
   const form = useForm<NpcFormValues>({ defaultValues: npc ? toForm(npc) : undefined });
+  const attributes = useFieldArray<NpcFormValues, "attributes">({ control: form.control, name: "attributes" });
+  const skills = useFieldArray<NpcFormValues, "skills">({ control: form.control, name: "skills" });
+  const conditions = useFieldArray<NpcFormValues, "conditions">({ control: form.control, name: "conditions" });
+  const spells = useFieldArray<NpcFormValues, "spells">({ control: form.control, name: "spells" });
+  const [entriesError, setEntriesError] = useState("");
 
   useEffect(() => {
     if (npc) form.reset(toForm(npc));
@@ -38,14 +80,35 @@ export function NpcEditor({ id }: { id: string }) {
 
   const commit = () => {
     const values = form.getValues();
+    let initialRevealEntries: Record<string, unknown>[];
+    try {
+      initialRevealEntries = values.initialRevealEntriesText.trim()
+        ? JSON.parse(values.initialRevealEntriesText) as Record<string, unknown>[]
+        : [];
+    } catch (caught) {
+      setEntriesError(caught instanceof Error ? `JSON 无法保存：${caught.message}` : "JSON 无法保存");
+      return;
+    }
+    if (!Array.isArray(initialRevealEntries)) {
+      setEntriesError("初始揭示条目必须是数组");
+      return;
+    }
+    setEntriesError("");
     const next: NpcDefinition = {
       ...values,
       visible_tags: values.visibleTagsText.split(",").map((tag) => tag.trim()).filter(Boolean),
       current_location: values.current_location || null,
       max_hp: Number.isFinite(values.max_hp) ? values.max_hp : null,
       asset_id: values.asset_id.trim() || null,
+      attributes: toRecord(values.attributes),
+      skills: toRecord(values.skills),
+      conditions: values.conditions.map((item) => item.value.trim()).filter(Boolean),
+      spells: values.spells.map((item) => item.value.trim()).filter(Boolean),
+      initial_reveal_entries: initialRevealEntries,
+      extensions: npc.extensions,
     };
-    delete (next as NpcDefinition & { visibleTagsText?: string }).visibleTagsText;
+    delete (next as NpcDefinition & { visibleTagsText?: string; initialRevealEntriesText?: string }).visibleTagsText;
+    delete (next as NpcDefinition & { visibleTagsText?: string; initialRevealEntriesText?: string }).initialRevealEntriesText;
     if (JSON.stringify(next) !== JSON.stringify(npc)) updateNpc(id, next);
   };
 
@@ -100,6 +163,73 @@ export function NpcEditor({ id }: { id: string }) {
             </FormField>
           </div>
         </section>
+        <section className="form-section">
+          <h2>属性与技能</h2>
+          <div className="form-grid">
+            <FormField label="属性" hint="例如 STR / DEX / INT">
+              <div className="kv-rows">
+                {attributes.fields.map((field, index) => (
+                  <div className="kv-row" key={field.id}>
+                    <input placeholder="属性名" {...form.register(`attributes.${index}.key`)} />
+                    <input type="number" placeholder="0" {...form.register(`attributes.${index}.value`, { valueAsNumber: true })} />
+                    <button type="button" className="row-remove" onClick={() => attributes.remove(index)} aria-label="删除属性">
+                      <X size={14} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <button type="button" className="row-add" onClick={() => attributes.append({ key: "", value: 0 })}>
+                <Plus size={12} /> 添加属性
+              </button>
+            </FormField>
+            <FormField label="技能" hint="例如 图书馆使用 75">
+              <div className="kv-rows">
+                {skills.fields.map((field, index) => (
+                  <div className="kv-row" key={field.id}>
+                    <input placeholder="技能名" {...form.register(`skills.${index}.key`)} />
+                    <input type="number" placeholder="0" {...form.register(`skills.${index}.value`, { valueAsNumber: true })} />
+                    <button type="button" className="row-remove" onClick={() => skills.remove(index)} aria-label="删除技能">
+                      <X size={14} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <button type="button" className="row-add" onClick={() => skills.append({ key: "", value: 0 })}>
+                <Plus size={12} /> 添加技能
+              </button>
+            </FormField>
+            <FormField label="状态">
+              <div className="kv-rows">
+                {conditions.fields.map((field, index) => (
+                  <div className="kv-row" style={{ gridTemplateColumns: "minmax(0, 1fr) 26px" }} key={field.id}>
+                    <input placeholder="状态名" {...form.register(`conditions.${index}.value`)} />
+                    <button type="button" className="row-remove" onClick={() => conditions.remove(index)} aria-label="删除状态">
+                      <X size={14} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <button type="button" className="row-add" onClick={() => conditions.append({ value: "" })}>
+                <Plus size={12} /> 添加状态
+              </button>
+            </FormField>
+            <FormField label="法术">
+              <div className="kv-rows">
+                {spells.fields.map((field, index) => (
+                  <div className="kv-row" style={{ gridTemplateColumns: "minmax(0, 1fr) 26px" }} key={field.id}>
+                    <input placeholder="法术名" {...form.register(`spells.${index}.value`)} />
+                    <button type="button" className="row-remove" onClick={() => spells.remove(index)} aria-label="删除法术">
+                      <X size={14} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <button type="button" className="row-add" onClick={() => spells.append({ value: "" })}>
+                <Plus size={12} /> 添加法术
+              </button>
+            </FormField>
+          </div>
+        </section>
         <section className="form-section keeper-section">
           <h2>守秘人信息</h2>
           <div className="form-grid">
@@ -116,6 +246,10 @@ export function NpcEditor({ id }: { id: string }) {
                 <option value={2}>2 · 深入了解</option>
                 <option value={3}>3 · 完全揭示</option>
               </select>
+            </FormField>
+            <FormField label="初始揭示条目" hint="揭示等级大于 0 时逐级填写，JSON 数组" wide>
+              <textarea rows={6} className="mono-input" {...form.register("initialRevealEntriesText")} />
+              {entriesError && <small className="content-save-error" role="alert">{entriesError}</small>}
             </FormField>
           </div>
         </section>

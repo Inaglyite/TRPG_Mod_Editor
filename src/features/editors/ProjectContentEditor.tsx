@@ -1,5 +1,5 @@
 import { DatabaseZap } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { EditorHeading } from "../../components/EditorHeading";
 import type { EditorProject, ModuleDefinition } from "../../domain/types";
 import { useEditorStore } from "../../store/editor-store";
@@ -19,15 +19,36 @@ function makeDraft(project: EditorProject): Draft {
     initialState: format(project.module.initial_state),
     assets: format(project.module.assets),
     lorebook: format(project.lorebook),
-    progression: format(project.module.progression ?? {}),
+    progression: format(project.module.progression ?? { essential_clue_ids: [] }),
   };
+}
+
+/** 结构化配置的快照：只在外部真正改动这些内容时重置草稿，不打断其他动作。 */
+function contentSnapshot(project: EditorProject): string {
+  return JSON.stringify([
+    project.keeperDocument,
+    project.theme,
+    project.module.initial_state,
+    project.module.assets,
+    project.module.progression,
+    project.lorebook,
+  ]);
 }
 
 export function ProjectContentEditor() {
   const project = useEditorStore((state) => state.project);
   const update = useEditorStore((state) => state.updateProjectContent);
+  const committed = useRef(contentSnapshot(project));
   const [draft, setDraft] = useState(() => makeDraft(project));
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    const snapshot = contentSnapshot(project);
+    if (snapshot !== committed.current) {
+      setDraft(makeDraft(project));
+      committed.current = snapshot;
+    }
+  }, [project]);
 
   const set = (key: keyof Draft, value: string) => setDraft((current) => ({ ...current, [key]: value }));
   const save = () => {
@@ -38,7 +59,7 @@ export function ProjectContentEditor() {
         initialState: JSON.parse(draft.initialState) as ModuleDefinition["initial_state"],
         assets: JSON.parse(draft.assets) as ModuleDefinition["assets"],
         lorebook: JSON.parse(draft.lorebook) as Record<string, unknown> | null,
-        progression: JSON.parse(draft.progression) as Record<string, unknown>,
+        progression: JSON.parse(draft.progression) as NonNullable<ModuleDefinition["progression"]>,
       };
       update(content);
       setError("");
@@ -64,13 +85,13 @@ export function ProjectContentEditor() {
         </section>
         <section className="form-section">
           <h2>结构化配置</h2>
-          <p className="section-help">E1 保留完整结构并在保存时校验 JSON；后续可在不改变工程契约的前提下继续拆成细粒度控件。</p>
+          <p className="section-help">这些区域按模组契约保留完整 JSON，保存时按当前 format_version 校验；保存后不会因撤销、重做或添加实体而丢失未保存的草稿。</p>
           <div className="content-json-grid">
             {([
               ["initialState", "初始调查员、Flags 与案件时钟"],
               ["assets", "素材映射"],
               ["lorebook", "Lorebook v3"],
-              ["progression", "Progression"],
+              ["progression", "Progression（v2 主线安全）"],
               ["theme", "主题"],
             ] as Array<[JsonKey, string]>).map(([key, label]) => (
               <FormField key={key} label={label} wide>

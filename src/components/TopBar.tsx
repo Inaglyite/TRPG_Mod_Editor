@@ -14,6 +14,7 @@ import {
 interface TopBarProps {
   title: string;
   version: string;
+  formatVersion: string;
   dirty: boolean;
   canUndo: boolean;
   canRedo: boolean;
@@ -38,7 +39,7 @@ export function TopBar(props: TopBarProps) {
         </div>
         <div className="brand-copy">
           <strong>TRPG Mod Editor</strong>
-          <span>FORMAT 1.0</span>
+          <span>FORMAT {props.formatVersion}</span>
         </div>
       </div>
 

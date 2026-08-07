@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DiagnosticsPanel } from "../components/DiagnosticsPanel";
 import { EditorWorkspace } from "../components/EditorWorkspace";
 import { EntityTree } from "../components/EntityTree";
@@ -102,6 +102,27 @@ export function App() {
     return () => window.clearTimeout(timer);
   }, [markSaved, project, revision, session.sessionId]);
 
+  const handleSave = useCallback(async () => {
+    const session = useSessionStore.getState();
+    const currentProject = useEditorStore.getState().project;
+    if (session.sessionId && session.syncState !== "conflict") {
+      try {
+        session.setSync("saving", "正在保存…");
+        const saved = await updateProjectSession(session.sessionId, session.remoteRevision, currentProject);
+        useSessionStore.getState().connect(saved);
+        markSaved();
+        setStatusMessage("已保存到工程会话");
+      } catch (error) {
+        if (error instanceof RevisionConflictError) useSessionStore.getState().setConflict(error.current);
+        else setStatusMessage("保存失败，本地草稿已保留");
+      }
+    } else {
+      saveDraft(currentProject);
+      markSaved();
+      setStatusMessage("已保存到本地草稿");
+    }
+  }, [markSaved]);
+
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       const command = event.ctrlKey || event.metaKey;
@@ -114,14 +135,12 @@ export function App() {
         redo();
       } else if (event.key.toLowerCase() === "s") {
         event.preventDefault();
-        downloadProject(useEditorStore.getState().project);
-        markSaved();
-        setStatusMessage("工程 JSON 已导出");
+        void handleSave();
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [markSaved, redo, undo]);
+  }, [handleSave, markSaved, redo, undo]);
 
   useEffect(() => {
     const warnBeforeClose = (event: BeforeUnloadEvent) => {
@@ -222,16 +241,22 @@ export function App() {
 
   const handleExport = () => {
     downloadProject(project);
-    markSaved();
     setStatusMessage("工程 JSON 已导出");
   };
 
   const handleOpenFile = async (file: File) => {
     try {
-      const loaded = await readProjectFile(file);
+      const { project: loaded, migrationReport } = await readProjectFile(file);
       replaceProject(loaded, true);
       const loadedErrors = validateProject(loaded).filter((item) => item.level === "error").length;
-      setStatusMessage(loadedErrors ? `工程已打开，发现 ${loadedErrors} 项错误` : "工程已打开并通过结构检查");
+      const migratedText = migrationReport
+        ? `；已从 v1 无损迁移至 v2（原工程已备份到浏览器），主线线索 ${migrationReport.essential_clue_ids.length} 条、补插 fallback ${migrationReport.inserted_fallbacks.length} 处`
+        : "";
+      setStatusMessage(
+        loadedErrors
+          ? `工程已打开，发现 ${loadedErrors} 项错误${migratedText}`
+          : `工程已打开并通过结构检查${migratedText}`,
+      );
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : "工程文件无法打开");
     } finally {
@@ -244,6 +269,7 @@ export function App() {
       <TopBar
         title={project.manifest.title}
         version={project.manifest.version}
+        formatVersion={project.module.format_version}
         dirty={dirty}
         canUndo={historyLength > 0}
         canRedo={futureLength > 0}
@@ -285,7 +311,7 @@ export function App() {
         <DiagnosticsPanel diagnostics={diagnostics} project={project} onSelect={select} />
       </div>
       <footer className="status-bar">
-        <span className={dirty ? "status-dirty" : "status-saved"}>{dirty ? "已修改" : "已导出"}</span>
+        <span className={dirty ? "status-dirty" : "status-saved"}>{dirty ? "已修改" : "已保存"}</span>
         <span>{statusMessage}</span>
         <span className={`sync-state sync-${session.syncState}`}>{session.syncMessage}</span>
         {session.syncState === "conflict" && <>

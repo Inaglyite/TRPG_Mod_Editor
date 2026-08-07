@@ -1,15 +1,17 @@
 import {
-  MANIFEST_SCHEMA_URI,
-  MODULE_SCHEMA_URI,
+  MANIFEST_SCHEMA_V2_URI,
+  MODULE_SCHEMA_V2_URI,
   type EditorProject,
 } from "./types";
+
+export const EDITOR_VERSION = "0.3.0";
 
 export function createDefaultProject(): EditorProject {
   return {
     editor_version: 2,
     manifest: {
-      $schema: MANIFEST_SCHEMA_URI,
-      format_version: "1.0",
+      $schema: MANIFEST_SCHEMA_V2_URI,
+      format_version: "2.0",
       id: "untitled.investigation",
       version: "0.1.0",
       title: "无题调查",
@@ -27,21 +29,23 @@ export function createDefaultProject(): EditorProject {
       lorebook: null,
       capabilities: [],
       tags: [],
-      created_with: "TRPG Mod Editor 0.1.0",
+      created_with: `TRPG Mod Editor ${EDITOR_VERSION}`,
       checksums: {},
     },
     module: {
-      $schema: MODULE_SCHEMA_URI,
-      format_version: "1.0",
+      $schema: MODULE_SCHEMA_V2_URI,
+      format_version: "2.0",
       entry_scene_id: "opening_scene",
       opening_prompt: "调查员抵达故事开始的地点。",
       npcs: {},
       scenes: {
         opening_scene: {
           name: "开场地点",
+          aliases: [],
           description: "在这里写下玩家第一次进入场景时能够感知到的内容。",
           exits: [],
           npcs_present: [],
+          encounters: [],
           tags: ["开场"],
           document: null,
           asset_id: null,
@@ -84,6 +88,7 @@ export function createDefaultProject(): EditorProject {
       },
       clue_links: [],
       extensions: {},
+      progression: { essential_clue_ids: [] },
     },
     keeperDocument: "# 守秘人正文\n\n在这里记录节奏、扮演建议和失败推进。\n",
     theme: {

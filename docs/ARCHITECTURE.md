@@ -20,8 +20,8 @@ EditorProject
 编辑器不保存玩家世界状态，也不在浏览器端复制 Python packager 的安全逻辑。
 
 TRPG Master 的模组契约是版本化外部依赖，不是复制后永久不变的源码。编辑器必须显式记录所消费的
-Schema 版本和来源提交，不能只写“与主项目同源”。当前 UI 完整覆盖 v1；v2 `progression` 与
-Lorebook v3 进入 E0.5 契约同步阶段。
+Schema 版本和来源提交，不能只写“与主项目同源”。当前 UI 完整覆盖 manifest/module v1 与 v2：
+新建工程默认 v2，打开 v1 工程自动无损迁移到 v2；Lorebook v3 已接入结构校验与引用检查。
 
 ## 2. 前端分层
 
@@ -40,8 +40,10 @@ Lorebook v3 进入 E0.5 契约同步阶段。
 
 校验分三层：
 
-1. AJV 按工程 `format_version` 选择 `schemas/trpgmod/*.schema.json`，报告类型、必填字段和格式错误。
-2. `validation.ts` 检查入口场景、出口、NPC、线索、发现规则、Lorebook 与初始状态之间的引用，
+1. AJV 按工程 `format_version` 选择 `schemas/trpgmod/*.schema.json`（manifest/module v1 或 v2），
+   `lorebook` 非空时用 `lorebook-v3.schema.json` 校验信封结构，报告类型、必填字段和格式错误。
+2. `validation.ts` 检查入口场景与 v2 可达性、出口、NPC 位置、在场人物、遭遇、线索关联、发现规则
+   与 fallback、主线 `progression`、旗标/案件时钟预声明、素材映射、初始线索与 Lorebook 引用，
    并提供 warning/advice。
 3. TRPG Master 编译 API 返回权威 Pydantic 诊断、`source_path -> output_path` trace 与编译预览。
 
@@ -84,6 +86,13 @@ PATCH /api/editor/projects/{session}
 
 服务端以 revision 拒绝静默覆盖，Electron 文件选择通过窄权限 preload/IPC 完成。
 
+E1.5 起，打开 `format_version 1.0` 的工程（本地文件、草稿或服务端会话）时自动无损迁移到 v2：
+迁移算法对齐 TRPG Master `module_migrations.migrate_v1_to_v2`（task 线索选为主线、为检定失败路径
+补插 grant_clue fallback；缺少发现规则的候选主线跳过而非报错）。迁移前把原始工程备份到浏览器
+LocalStorage（最多保留 5 份），迁移结果以报告形式提示作者。编辑器内容（keeperDocument/theme/
+lorebook）是包文件路径的单一事实来源，打开与保存时同步 manifest 的 `keeper_document`/`theme`/
+`lorebook` 引用。
+
 ## 5. 安全边界
 
 - Markdown 预览不执行原始 HTML、脚本、iframe 或远程资源。
@@ -96,18 +105,20 @@ PATCH /api/editor/projects/{session}
 
 ## 6. 集成边界
 
-后续通过适配器访问 TRPG Master，不在组件里直接拼接 HTTP：
+通过 REST 适配器访问 TRPG Master（`src/services/editor-backend.ts`），组件不直接拼接 HTTP：
 
 ```text
-EditorBackend
-  openProject()
-  saveProject(expectedRevision, operations)
-  validateProject()
-  exportPackage()
-  startPlaytest()
+editor-backend.ts
+  createProjectSession / getProjectSession / updateProjectSession / listProjectSessions
+    → /api/editor/projects（revision 乐观并发）
+  compileProject()
+    → POST /api/modules/compile（权威编译预览）
 ```
 
-浏览器开发环境和 Electron 使用同一个接口，分别由 HTTP 与 preload 实现。
+`updateProjectSession` 携带 `expected_revision`，409 时抛出 `RevisionConflictError` 并携带服务器
+最新会话供冲突恢复。浏览器开发环境和未来 Electron 使用同一个适配器层，分别由 HTTP 与 preload
+实现。`.trpgmod` 打包导出与试玩（`exportPackage`/`startPlaytest`）尚未实现，计划在 E3 通过后端
+权威 packager/API 完成。
 
 ## 7. 游戏运行时边界
 

@@ -33,7 +33,7 @@ interface EditorStore {
   updateProjectContent: (content: Pick<EditorProject, "keeperDocument" | "theme" | "lorebook"> & {
     initialState: ModuleDefinition["initial_state"];
     assets: ModuleDefinition["assets"];
-    progression: Record<string, unknown>;
+    progression: NonNullable<ModuleDefinition["progression"]>;
   }) => void;
   updateScene: (id: string, scene: SceneDefinition) => void;
   updateNpc: (id: string, npc: NpcDefinition) => void;
@@ -157,6 +157,10 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       project.module.initial_state = content.initialState;
       project.module.assets = content.assets;
       project.module.progression = content.progression;
+      // 编辑器内容是包文件路径的单一事实来源：有正文才声明对应文件。
+      project.manifest.keeper_document = project.keeperDocument.trim() ? "keeper.md" : null;
+      project.manifest.theme = project.theme && Object.keys(project.theme).length > 0 ? "theme.json" : null;
+      project.manifest.lorebook = project.lorebook ? "lorebook.json" : null;
       return commit(state, project);
     }),
 
@@ -200,9 +204,11 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         id = nextId("scene", project.module.scenes);
         project.module.scenes[id] = {
           name: "新场景",
+          aliases: [],
           description: "",
           exits: [],
           npcs_present: [],
+          encounters: [],
           tags: [],
           document: null,
           asset_id: null,
@@ -239,6 +245,9 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
           related_npcs: [],
           related_scenes: [],
           asset_id: null,
+          granted_item: null,
+          flag_effects: {},
+          discovery_rules: [],
           initially_known: false,
           discovery_notes: "",
           extensions: {},
@@ -250,6 +259,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
           trigger: "",
           description: "",
           ending_type: "neutral",
+          required_flags: {},
         };
       }
       return commit(state, project, { kind, id });
@@ -274,9 +284,13 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         delete project.module.npcs[id];
         for (const scene of Object.values(project.module.scenes)) {
           scene.npcs_present = scene.npcs_present.filter((npcId) => npcId !== id);
+          scene.encounters = scene.encounters.filter((encounter) => encounter.npc_id !== id);
         }
         for (const clue of Object.values(project.module.clues)) {
           clue.related_npcs = clue.related_npcs.filter((npcId) => npcId !== id);
+          for (const rule of clue.discovery_rules) {
+            rule.npc_reveals = rule.npc_reveals.filter((reveal) => reveal.npc_id !== id);
+          }
         }
       } else if (kind === "clue") {
         delete project.module.clues[id];
@@ -285,6 +299,17 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         project.module.clue_links = project.module.clue_links.filter(
           (link) => link.from !== id && link.to !== id,
         );
+        for (const clue of Object.values(project.module.clues)) {
+          for (const rule of clue.discovery_rules) {
+            if (rule.fallback?.mode === "alternate_clue" && rule.fallback.clue_id === id) {
+              rule.fallback = null;
+            }
+          }
+        }
+        if (project.module.progression) {
+          project.module.progression.essential_clue_ids =
+            project.module.progression.essential_clue_ids.filter((clueId) => clueId !== id);
+        }
       } else {
         delete project.module.endings[id];
       }
@@ -312,13 +337,34 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     } else if (kind === "npc") {
       project.module.npcs[next] = project.module.npcs[id];
       delete project.module.npcs[id];
-      for (const scene of Object.values(project.module.scenes)) scene.npcs_present = scene.npcs_present.map((value) => value === id ? next : value);
-      for (const clue of Object.values(project.module.clues)) clue.related_npcs = clue.related_npcs.map((value) => value === id ? next : value);
+      for (const scene of Object.values(project.module.scenes)) {
+        scene.npcs_present = scene.npcs_present.map((value) => value === id ? next : value);
+        for (const encounter of scene.encounters) {
+          if (encounter.npc_id === id) encounter.npc_id = next;
+        }
+      }
+      for (const clue of Object.values(project.module.clues)) {
+        clue.related_npcs = clue.related_npcs.map((value) => value === id ? next : value);
+        for (const rule of clue.discovery_rules) {
+          for (const reveal of rule.npc_reveals) {
+            if (reveal.npc_id === id) reveal.npc_id = next;
+          }
+        }
+      }
     } else if (kind === "clue") {
       project.module.clues[next] = project.module.clues[id];
       delete project.module.clues[id];
       project.module.initial_state.known_clue_ids = project.module.initial_state.known_clue_ids.map((value) => value === id ? next : value);
       project.module.clue_links = project.module.clue_links.map((link) => ({ ...link, from: link.from === id ? next : link.from, to: link.to === id ? next : link.to }));
+      if (project.module.progression) {
+        project.module.progression.essential_clue_ids =
+          project.module.progression.essential_clue_ids.map((value) => value === id ? next : value);
+      }
+      for (const clue of Object.values(project.module.clues)) {
+        for (const rule of clue.discovery_rules) {
+          if (rule.fallback?.clue_id === id) rule.fallback.clue_id = next;
+        }
+      }
     } else {
       project.module.endings[next] = project.module.endings[id];
       delete project.module.endings[id];
@@ -341,6 +387,12 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       if (entity.name) entity.name += "（副本）";
       else if (entity.title) entity.title += "（副本）";
       else if (entity.text) entity.text += "（副本）";
+      if (kind === "clue") {
+        const clone = collection[next] as { initially_known: boolean };
+        if (clone.initially_known && !project.module.initial_state.known_clue_ids.includes(next)) {
+          project.module.initial_state.known_clue_ids.push(next);
+        }
+      }
       return commit(state, project, { kind, id: next });
     }),
 }));

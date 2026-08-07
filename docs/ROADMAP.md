@@ -1,8 +1,8 @@
 # 开发路线图
 
-- 更新日期：2026-07-16
-- 当前基线：E1 工程会话基线可运行，Schema 锁定到 TRPG Master `da55ed0`
-- 当前优先级：继续把结构化 JSON 配置拆成细粒度表单，并完成作者效率工具
+- 更新日期：2026-08-07
+- 当前基线：E1.5 契约收敛（0.3），Schema 锁定到 TRPG Master `da55ed0`
+- 当前优先级：素材与关系图（E2），然后通过后端权威 packager 打通 `.trpgmod` 导出与试玩（E3）
 
 ## E0：可运行骨架
 
@@ -23,8 +23,10 @@
 - 接入 TRPG Master compile API，展示稳定诊断 code、字段 path 和编译 trace。
 - 明确 choices/决策点/时间线属于游戏引擎，编辑器只校验可达性和失败替代入口。
 
-状态：基础契约已完成：五份权威 Schema、hash lock、EditorProject v2 迁移、compile API 已接入。
-模组 format v2 的完整作者态类型和迁移报告仍作为后续兼容性工作持续补齐。
+状态：已完成（E1.5 收敛）。五份权威 Schema、hash lock、EditorProject v2 迁移、compile API 已接入；
+v2 完整作者态类型（`progression`、`encounters`、`discovery_rules`、`flag_effects`、`required_flags`、
+`reveal_on` 等）、按版本路由的 Schema 校验、Lorebook v3 结构校验与引用检查、v1 → v2 无损迁移
+（task 线索选为主线、补插 grant_clue fallback、浏览器备份与迁移报告）全部落地；新建工程默认 v2。
 
 ## E1：工程会话与完整表单
 
@@ -34,10 +36,10 @@
 - Flags、案件时钟、初始调查员、素材映射、Lorebook、progression 和主题完整表单。
 - ID 重命名重构、复制实体和可撤销的快速修复。
 
-状态：E1 基线已完成。已实现 FastAPI 持久工程会话、乐观 revision、自动保存、崩溃恢复、最近工程、
-冲突显式恢复、Keeper 安全纯文本预览，以及 Flags/案件时钟/初始调查员/素材/Lorebook/progression/
-主题的无损结构化编辑入口；同时提供新建向导、另存为、引用安全 ID 重命名和实体复制。
-细粒度配置控件和诊断一键快速修复作为 E1.x 体验增强继续迭代。
+状态：E1 基线已完成，E1.5 修复了基线遗留缺陷：默认 v1 工程写入 v1 Schema 禁止的 `progression`
+导致的永久诊断错误、复制线索不同步 `known_clue_ids`、NPC 属性/技能/状态/法术无编辑入口、
+Ctrl+S 与导出语义混淆、结构化配置草稿被无关动作清空、manifest 文件引用与编辑器内容不一致、
+文档过时。
 
 ## E2：素材与关系图
 
