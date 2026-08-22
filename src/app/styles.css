@@ -1095,6 +1095,8 @@ select:focus-visible {
 .auth-shell {
   display: grid;
   place-items: center;
+  /* .app-shell 的三行模板是为顶栏/工作区/状态栏准备的，登录空态只有一个子项 */
+  grid-template-rows: 1fr;
   min-height: 100vh;
 }
 .auth-required {
