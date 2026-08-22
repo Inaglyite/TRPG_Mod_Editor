@@ -1,8 +1,8 @@
 # 开发路线图
 
-- 更新日期：2026-08-07
-- 当前基线：E4 桌面发布（0.3），Schema 锁定到 TRPG Master `da55ed0`
-- 当前优先级：E3 打包导出打通 `.trpgmod` 闭环，然后 E2 素材与关系图
+- 更新日期：2026-08-22
+- 当前基线：E4 桌面发布（0.3）+ E3 打包试玩闭环，Schema 锁定到 TRPG Master `da55ed0`
+- 当前优先级：E2 素材与关系图
 
 ## E0：可运行骨架
 
@@ -56,6 +56,15 @@ Ctrl+S 与导出语义混淆、结构化配置草稿被无关动作清空、mani
 - 编译预览 `module.md` 与 `world_state_initial.json`。
 - 一键安装并创建隔离试玩世界。
 - 旧 `module.md` 迁移报告。
+
+状态：已完成（2026-08-22）。顶栏「打包」走后端 `/api/editor/projects/{id}/export`
+权威编译导出，失败逐条透出打包诊断；导出成功后可「安装到后端并试玩」
+（/api/modules/import → switch → 打开游戏；云端账号模式 switch 返回 409 属预期，
+改为在大厅新建对应模组的世界）。「从 .trpgmod 包创建」经新后端端点
+`/api/editor/projects/import` 反向解包为工程（保留原 format_version，不隐式迁移）。
+同期完成同源化联动：API base 默认 `window.location.origin`（Electron `file://`
+回退 127.0.0.1:8765）、cookie session 凭据、401/403 管理员登录引导空态；
+自定义 Skill 结构化编辑器（契约对齐后端 EditorSkillDraft）。
 
 ## E4：桌面发布
 

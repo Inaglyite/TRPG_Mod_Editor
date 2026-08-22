@@ -242,3 +242,109 @@ describe("validateProject", () => {
     }));
   });
 });
+
+describe("skills 诊断", () => {
+  const validSkill = () => ({
+    name: "spot_clue",
+    body: "# 发现线索\n\n仔细观察。",
+    version: "0",
+    description: "",
+    required_tools: [] as string[],
+    allowed_tools: [] as string[],
+  });
+
+  it("accepts well-formed skills without errors", () => {
+    const project = createDefaultProject();
+    project.skills = [validSkill()];
+    project.manifest.capabilities = ["custom_skills"];
+
+    const diagnostics = validateProject(project);
+    expect(diagnostics.filter((item) => item.path.startsWith("skills"))).toEqual([]);
+  });
+
+  it("rejects invalid skill names with a skills selection", () => {
+    const project = createDefaultProject();
+    project.skills = [{ ...validSkill(), name: "Spot-Clue" }];
+
+    expect(validateProject(project)).toContainEqual(expect.objectContaining({
+      level: "error",
+      path: "skills[0].name",
+      selection: { kind: "skills" },
+    }));
+  });
+
+  it("rejects duplicate skill names", () => {
+    const project = createDefaultProject();
+    project.skills = [validSkill(), validSkill()];
+
+    expect(validateProject(project)).toContainEqual(expect.objectContaining({
+      level: "error",
+      path: "skills[1].name",
+      message: expect.stringContaining("重复"),
+    }));
+  });
+
+  it("rejects empty and oversized skill bodies", () => {
+    const project = createDefaultProject();
+    project.skills = [
+      { ...validSkill(), name: "empty_body", body: "  " },
+      { ...validSkill(), name: "huge_body", body: "啊".repeat(256 * 1024) },
+    ];
+
+    const diagnostics = validateProject(project);
+    expect(diagnostics).toContainEqual(expect.objectContaining({
+      level: "error",
+      path: "skills[0].body",
+      message: "Skill 正文不能为空",
+    }));
+    expect(diagnostics).toContainEqual(expect.objectContaining({
+      level: "error",
+      path: "skills[1].body",
+      message: expect.stringContaining("256 KiB"),
+    }));
+  });
+
+  it("rejects projects with more than 64 skills", () => {
+    const project = createDefaultProject();
+    project.skills = Array.from({ length: 65 }, (_, index) => ({
+      ...validSkill(),
+      name: `skill_${index}`,
+    }));
+
+    expect(validateProject(project)).toContainEqual(expect.objectContaining({
+      level: "error",
+      path: "skills",
+      message: expect.stringContaining("64"),
+    }));
+  });
+
+  it("rejects malformed tool names", () => {
+    const project = createDefaultProject();
+    project.skills = [{
+      ...validSkill(),
+      required_tools: ["Roll_Dice"],
+      allowed_tools: ["1bad"],
+    }];
+
+    const diagnostics = validateProject(project);
+    expect(diagnostics).toContainEqual(expect.objectContaining({
+      level: "error",
+      path: "skills[0].required_tools",
+    }));
+    expect(diagnostics).toContainEqual(expect.objectContaining({
+      level: "error",
+      path: "skills[0].allowed_tools",
+    }));
+  });
+
+  it("advises enabling the custom_skills capability when skills exist", () => {
+    const project = createDefaultProject();
+    project.skills = [validSkill()];
+
+    expect(validateProject(project)).toContainEqual(expect.objectContaining({
+      level: "advice",
+      path: "manifest.capabilities",
+      message: expect.stringContaining("custom_skills"),
+    }));
+  });
+});

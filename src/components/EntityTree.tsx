@@ -6,6 +6,7 @@ import {
   Clapperboard,
   FileText,
   Settings2,
+  Sparkles,
   Flag,
   Plus,
   Copy,
@@ -13,25 +14,25 @@ import {
   Search,
 } from "lucide-react";
 import { useState, type ReactNode } from "react";
-import type { EditorProject, EntityKind, EntitySelection } from "../domain/types";
+import type { EditorProject, EntitySelection, TreeEntityKind } from "../domain/types";
 
 interface EntityTreeProps {
   project: EditorProject;
   selection: EntitySelection;
   onSelect: (selection: EntitySelection) => void;
-  onAdd: (kind: Exclude<EntityKind, "manifest" | "content">) => void;
-  onRename: (kind: Exclude<EntityKind, "manifest" | "content">, id: string, nextId: string) => boolean;
-  onDuplicate: (kind: Exclude<EntityKind, "manifest" | "content">, id: string) => void;
+  onAdd: (kind: TreeEntityKind) => void;
+  onRename: (kind: TreeEntityKind, id: string, nextId: string) => boolean;
+  onDuplicate: (kind: TreeEntityKind, id: string) => void;
 }
 
 interface TreeSectionProps {
   label: string;
-  kind: Exclude<EntityKind, "manifest" | "content">;
+  kind: TreeEntityKind;
   icon: ReactNode;
   entities: Array<[string, string]>;
   selection: EntitySelection;
   onSelect: (selection: EntitySelection) => void;
-  onAdd: (kind: Exclude<EntityKind, "manifest" | "content">) => void;
+  onAdd: (kind: TreeEntityKind) => void;
   onRename: EntityTreeProps["onRename"];
   onDuplicate: EntityTreeProps["onDuplicate"];
 }
@@ -132,6 +133,15 @@ export function EntityTree({ project, selection, onSelect, onAdd, onRename, onDu
         >
           <Settings2 size={16} />
           <span>世界与素材</span>
+        </button>
+        <button
+          type="button"
+          className={`tree-root-item${selection.kind === "skills" ? " is-active" : ""}`}
+          onClick={() => onSelect({ kind: "skills" })}
+        >
+          <Sparkles size={16} />
+          <span>自定义 Skill</span>
+          <small>{project.skills?.length ?? 0}</small>
         </button>
         <TreeSection
           label="场景"

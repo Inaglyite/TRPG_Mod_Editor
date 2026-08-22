@@ -8,6 +8,7 @@ import {
   type ModuleManifest,
   type NpcDefinition,
   type SceneDefinition,
+  type SkillDraft,
 } from "../../domain/types";
 
 export const DRAFT_STORAGE_KEY = "trpg-mod-editor:draft:v2";
@@ -84,6 +85,37 @@ const ENDING_DEFAULTS: Omit<EndingDefinition, "title" | "trigger" | "description
   required_flags: {},
 };
 
+/** 缺省字段与后端 EditorSkillDraft 默认值对齐。 */
+const SKILL_DEFAULTS: Required<Omit<SkillDraft, "name" | "body">> = {
+  version: "0",
+  description: "",
+  required_tools: [],
+  allowed_tools: [],
+};
+
+/** 解析工程级 skills 列表；缺省字段补默认值，形状不合法时给出清晰报错。 */
+function parseSkillDrafts(value: unknown): SkillDraft[] | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (!Array.isArray(value)) throw new Error("工程 skills 必须是数组");
+  return value.map((item, index) => {
+    if (!isRecord(item)) throw new Error(`skills[${index}] 不是有效的 Skill 对象`);
+    if (typeof item.name !== "string" || !item.name.trim()) {
+      throw new Error(`skills[${index}] 缺少 name`);
+    }
+    if (typeof item.body !== "string") {
+      throw new Error(`skills[${index}] 缺少 body`);
+    }
+    for (const key of ["required_tools", "allowed_tools"] as const) {
+      if (key in item && !Array.isArray(item[key])) {
+        throw new Error(`skills[${index}].${key} 必须是数组`);
+      }
+    }
+    const draft: Record<string, unknown> = { ...item };
+    fillDefaults(draft, SKILL_DEFAULTS);
+    return draft as unknown as SkillDraft;
+  });
+}
+
 const MANIFEST_DEFAULTS: Partial<ModuleManifest> = {
   author: "",
   description: "",
@@ -138,6 +170,9 @@ export function normalizeProject(project: EditorProject): EditorProject {
         reveal_on: null,
       });
     }
+  }
+  for (const skill of project.skills ?? []) {
+    fillDefaults(skill as unknown as Record<string, unknown>, SKILL_DEFAULTS);
   }
 
   // 编辑器内容是包文件路径的单一事实来源，打开工程时收敛 manifest 引用。
@@ -255,6 +290,8 @@ export function parseEditorProjectWithReport(
     theme: isRecord(base.theme) ? base.theme : {},
     lorebook: isRecord(base.lorebook) ? base.lorebook : null,
   };
+  const skills = parseSkillDrafts(base.skills);
+  if (skills) parsed.skills = skills;
   const migrated = migrateV1ToV2(parsed);
   if (migrated.report) backupMigratedSource(value);
   return {

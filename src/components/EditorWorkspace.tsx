@@ -4,6 +4,7 @@ import { EndingEditor } from "../features/editors/EndingEditor";
 import { ManifestEditor } from "../features/editors/ManifestEditor";
 import { NpcEditor } from "../features/editors/NpcEditor";
 import { SceneEditor } from "../features/editors/SceneEditor";
+import { SkillsEditor } from "../features/editors/SkillsEditor";
 import { ProjectContentEditor } from "../features/editors/ProjectContentEditor";
 
 export function EditorWorkspace({ selection }: { selection: EntitySelection }) {
@@ -11,6 +12,7 @@ export function EditorWorkspace({ selection }: { selection: EntitySelection }) {
     <main className="editor-workspace">
       {selection.kind === "manifest" && <ManifestEditor />}
       {selection.kind === "content" && <ProjectContentEditor />}
+      {selection.kind === "skills" && <SkillsEditor />}
       {selection.kind === "scene" && selection.id && <SceneEditor id={selection.id} />}
       {selection.kind === "npc" && selection.id && <NpcEditor id={selection.id} />}
       {selection.kind === "clue" && selection.id && <ClueEditor id={selection.id} />}

@@ -6,6 +6,7 @@ import {
   FilePlus2,
   FolderOpen,
   History,
+  Package,
   PlayCircle,
   Redo2,
   ShieldCheck,
@@ -23,6 +24,7 @@ interface TopBarProps {
   onNew: () => void;
   onOpen: () => void;
   onExport: () => void;
+  onExportModule: () => void;
   onUndo: () => void;
   onRedo: () => void;
   onValidate: () => void;
@@ -68,6 +70,10 @@ export function TopBar(props: TopBarProps) {
           <button type="button" className="tool-button" onClick={props.onExport} title="导出工程 JSON">
             <Download size={17} />
             <span>导出</span>
+          </button>
+          <button type="button" className="tool-button" onClick={props.onExportModule} title="保存并导出 .trpgmod 模组包">
+            <Package size={17} />
+            <span>打包</span>
           </button>
           <button type="button" className="tool-button" onClick={props.onSaveAs} title="另存为新的工程会话">
             <CopyPlus size={17} />

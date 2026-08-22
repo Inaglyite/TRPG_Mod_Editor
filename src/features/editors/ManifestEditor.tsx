@@ -24,6 +24,7 @@ function toForm(manifest: ModuleManifest, openingPrompt: string): ManifestFormVa
 export function ManifestEditor() {
   const manifest = useEditorStore((state) => state.project.manifest);
   const openingPrompt = useEditorStore((state) => state.project.module.opening_prompt);
+  const skillCount = useEditorStore((state) => state.project.skills?.length ?? 0);
   const updateManifest = useEditorStore((state) => state.updateManifest);
   const updateOpeningPrompt = useEditorStore((state) => state.updateOpeningPrompt);
   const form = useForm<ManifestFormValues>({ defaultValues: toForm(manifest, openingPrompt) });
@@ -114,6 +115,11 @@ export function ManifestEditor() {
               </label>
             ))}
           </CheckGrid>
+          {skillCount > 0 && !manifest.capabilities.includes("custom_skills") && (
+            <p className="section-help capability-hint">
+              已定义 {skillCount} 个自定义 Skill，建议勾选「自定义 Skill」能力（导出时会自动补充）。
+            </p>
+          )}
         </section>
       </form>
     </div>

@@ -14,7 +14,9 @@ export type ModuleCapability =
 export type ClueCategory = "investigation" | "event" | "task" | "npc";
 export type ClueType = "obvious" | "hidden" | "inferred";
 export type EndingType = "good" | "neutral" | "bad" | "secret";
-export type EntityKind = "manifest" | "content" | "scene" | "npc" | "clue" | "ending";
+export type EntityKind = "manifest" | "content" | "skills" | "scene" | "npc" | "clue" | "ending";
+/** 实体树里以 ID 管理的内容实体（skills 是工程级列表，不在其中）。 */
+export type TreeEntityKind = Exclude<EntityKind, "manifest" | "content" | "skills">;
 
 /** 旗标与案件时钟的取值：布尔、整数或短文本。 */
 export type FlagValue = boolean | number | string;
@@ -216,6 +218,19 @@ export interface ModuleDefinition {
   progression?: ProgressionDefinition;
 }
 
+/**
+ * 工程级自定义 Skill 草稿，字段与后端 src/editor_projects.py 的
+ * EditorSkillDraft 对齐；导出时写为包内 skills/<name>.skill。
+ */
+export interface SkillDraft {
+  name: string;
+  body: string;
+  version?: string;
+  description?: string;
+  required_tools?: string[];
+  allowed_tools?: string[];
+}
+
 export interface EditorProject {
   editor_version: 2;
   manifest: ModuleManifest;
@@ -223,6 +238,7 @@ export interface EditorProject {
   keeperDocument: string;
   theme: Record<string, unknown>;
   lorebook: Record<string, unknown> | null;
+  skills?: SkillDraft[];
 }
 
 export interface EntitySelection {

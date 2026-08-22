@@ -4,12 +4,13 @@ import type {
   ClueDefinition,
   EditorProject,
   EndingDefinition,
-  EntityKind,
   EntitySelection,
   ModuleManifest,
   ModuleDefinition,
   NpcDefinition,
   SceneDefinition,
+  SkillDraft,
+  TreeEntityKind,
 } from "../domain/types";
 import { loadDraft } from "../features/project/project-io";
 
@@ -39,10 +40,11 @@ interface EditorStore {
   updateNpc: (id: string, npc: NpcDefinition) => void;
   updateClue: (id: string, clue: ClueDefinition) => void;
   updateEnding: (id: string, ending: EndingDefinition) => void;
-  addEntity: (kind: Exclude<EntityKind, "manifest" | "content">) => void;
-  removeEntity: (kind: Exclude<EntityKind, "manifest" | "content">, id: string) => void;
-  renameEntity: (kind: Exclude<EntityKind, "manifest" | "content">, id: string, nextId: string) => boolean;
-  duplicateEntity: (kind: Exclude<EntityKind, "manifest" | "content">, id: string) => void;
+  updateSkills: (skills: SkillDraft[]) => void;
+  addEntity: (kind: TreeEntityKind) => void;
+  removeEntity: (kind: TreeEntityKind, id: string) => void;
+  renameEntity: (kind: TreeEntityKind, id: string, nextId: string) => boolean;
+  duplicateEntity: (kind: TreeEntityKind, id: string) => void;
 }
 
 function snapshot(project: EditorProject): string {
@@ -193,6 +195,14 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     set((state) => {
       const project = cloneProject(state.project);
       project.module.endings[id] = ending;
+      return commit(state, project);
+    }),
+
+  updateSkills: (skills) =>
+    set((state) => {
+      if (JSON.stringify(state.project.skills ?? []) === JSON.stringify(skills)) return state;
+      const project = cloneProject(state.project);
+      project.skills = skills;
       return commit(state, project);
     }),
 

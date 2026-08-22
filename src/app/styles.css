@@ -24,6 +24,13 @@
   --red: #ad3b35;
   --red-wash: #f4ddda;
   --focus: #247b73;
+  /* 历史样式引用了这组别名变量但从未定义，补齐以恢复对话框/主按钮的可见性。 */
+  --accent: #247b73;
+  --text-primary: #242720;
+  --text-muted: #62665c;
+  --border-subtle: #d0d0c7;
+  --surface-panel: #f7f6f0;
+  --surface-raised: #ffffff;
   --mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
 }
 
@@ -194,6 +201,7 @@ select:focus-visible {
   background: transparent;
   border-radius: 4px;
   font-size: 12px;
+  white-space: nowrap;
 }
 
 .tool-button:hover,
@@ -229,6 +237,7 @@ select:focus-visible {
   border: 1px solid #3d8079;
   font-size: 12px;
   font-weight: 700;
+  white-space: nowrap;
 }
 
 .validate-button:hover {
@@ -1073,6 +1082,81 @@ select:focus-visible {
   color: var(--text-primary);
 }
 
+.import-package-block {
+  display: grid;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-subtle);
+  justify-items: start;
+}
+.import-package-title { color: var(--text-muted); font-size: 12px; }
+.import-package-error { margin: 0; color: var(--red); font-size: 12px; }
+
+.auth-shell {
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+}
+.auth-required {
+  display: grid;
+  gap: 14px;
+  justify-items: center;
+  max-width: 460px;
+  padding: 40px 32px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--surface-panel);
+  text-align: center;
+  color: var(--text-muted);
+}
+.auth-required h1 { margin: 0; color: var(--text-primary); font-size: 18px; }
+.auth-required p { margin: 0; line-height: 1.7; font-size: 13px; }
+.auth-actions { display: flex; gap: 10px; align-items: center; }
+.auth-actions .primary-button { text-decoration: none; }
+
+.skills-layout {
+  display: grid;
+  grid-template-columns: minmax(180px, 240px) 1fr;
+  gap: 16px;
+  align-items: start;
+}
+.skills-list {
+  display: grid;
+  gap: 6px;
+}
+.skills-list-item {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+}
+.skills-list-item:hover { border-color: var(--accent); }
+.skills-list-item.is-active { border-color: var(--accent); }
+.skills-list-item code { color: var(--text-muted); font-size: 11px; }
+
+.tree-root-item small {
+  margin-left: auto;
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.capability-hint { margin: 8px 0 0; font-size: 12px; }
+
+/* .tool-button 默认配色是为深色顶栏准备的，浅色面板/对话框里需要覆盖。 */
+.skills-list .tool-button,
+.skills-form .tool-button,
+.import-package-block .tool-button,
+.auth-actions .tool-button,
+.release-actions .tool-button {
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+}
+
 @media (max-width: 900px) {
   .keeper-grid, .content-json-grid { grid-template-columns: 1fr; }
 }
@@ -1091,7 +1175,8 @@ select:focus-visible {
   font-size: 9px;
 }
 
-@media (max-width: 1120px) {
+/* 顶栏按钮增多后，1280 宽窗口已放不下全文字工具行：提前进入图标化约定。 */
+@media (max-width: 1340px) {
   .top-bar {
     grid-template-columns: 210px minmax(120px, 1fr) auto;
   }
@@ -1105,7 +1190,9 @@ select:focus-visible {
     justify-content: center;
     padding: 0;
   }
+}
 
+@media (max-width: 1120px) {
   .workbench-grid {
     grid-template-columns: 230px minmax(380px, 1fr) 270px;
   }

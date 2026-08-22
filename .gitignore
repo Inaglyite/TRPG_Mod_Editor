@@ -1,7 +1,9 @@
 node_modules/
 dist/
 dist-electron/
-release/
+# 只忽略仓库根部的 electron-builder 输出目录；不加前导斜杠会误伤
+# src/features/release/ 等深层同名目录。
+/release/
 coverage/
 .vite/
 .DS_Store

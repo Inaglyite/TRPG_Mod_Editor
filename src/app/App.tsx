@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ShieldAlert } from "lucide-react";
 import { DiagnosticsPanel } from "../components/DiagnosticsPanel";
 import { EditorWorkspace } from "../components/EditorWorkspace";
 import { EntityTree } from "../components/EntityTree";
@@ -14,13 +15,24 @@ import {
   saveDraft,
 } from "../features/project/project-io";
 import { ReleaseChecklistDialog } from "../features/release/ReleaseChecklistDialog";
+import {
+  ExportPackageDialog,
+  type ExportDialogData,
+  type InstallState,
+} from "../features/release/ExportPackageDialog";
 import { isProjectDirty, useEditorStore } from "../store/editor-store";
 import {
+  AuthRequiredError,
+  BackendValidationError,
   compileProject,
   createProjectSession,
+  exportProjectPackage,
   getProjectSession,
+  importProjectPackage,
+  installModulePackage,
   listProjectSessions,
   RevisionConflictError,
+  switchActiveModule,
   updateProjectSession,
 } from "../services/editor-backend";
 import { buildErrorReport } from "../services/error-report";
@@ -47,6 +59,9 @@ export function App() {
   const redo = useEditorStore((state) => state.redo);
   const fileInput = useRef<HTMLInputElement>(null);
   const [statusMessage, setStatusMessage] = useState("本地草稿已启用");
+  const [authMessage, setAuthMessage] = useState<string | null>(null);
+  const [exportDialog, setExportDialog] = useState<ExportDialogData | null>(null);
+  const [installState, setInstallState] = useState<InstallState>({ busy: false, message: "", failed: false });
   const [recentOpen, setRecentOpen] = useState(false);
   const [newProjectOpen, setNewProjectOpen] = useState(false);
   const [releaseOpen, setReleaseOpen] = useState(false);
@@ -69,6 +84,17 @@ export function App() {
     return () => window.clearTimeout(timer);
   }, [project, revision]);
 
+  /** 401/403 时进入「需要管理员登录」空态，其余错误回落到状态栏。 */
+  const reportError = useCallback((error: unknown, fallback: string) => {
+    if (error instanceof AuthRequiredError) {
+      setAuthMessage(error.message);
+      return;
+    }
+    setStatusMessage(error instanceof Error ? error.message : fallback);
+  }, []);
+
+  const [connectNonce, setConnectNonce] = useState(0);
+
   useEffect(() => {
     let cancelled = false;
     async function connect() {
@@ -82,15 +108,22 @@ export function App() {
         window.localStorage.setItem(SESSION_KEY, remote.session_id);
         replaceProject(remote.project, true);
         useSessionStore.getState().connect(remote);
-      } catch {
-        if (!cancelled) useSessionStore.getState().setSync("offline", "工程服务不可用，本地草稿仍会保存");
+        setAuthMessage(null);
+      } catch (error) {
+        if (cancelled) return;
+        if (error instanceof AuthRequiredError) {
+          setAuthMessage(error.message);
+          useSessionStore.getState().setSync("offline", "需要管理员登录");
+        } else {
+          useSessionStore.getState().setSync("offline", "工程服务不可用，本地草稿仍会保存");
+        }
       } finally {
         initialized.current = true;
       }
     }
     void connect();
     return () => { cancelled = true; };
-  }, [replaceProject]);
+  }, [replaceProject, connectNonce]);
 
   useEffect(() => {
     if (!initialized.current || !session.sessionId || useSessionStore.getState().syncState === "conflict") return;
@@ -104,6 +137,7 @@ export function App() {
         markSaved();
       } catch (error) {
         if (error instanceof RevisionConflictError) useSessionStore.getState().setConflict(error.current);
+        else if (error instanceof AuthRequiredError) setAuthMessage(error.message);
         else useSessionStore.getState().setSync("offline", "自动保存失败，本地草稿已保留");
       }
     }, 700);
@@ -122,6 +156,7 @@ export function App() {
         setStatusMessage("已保存到工程会话");
       } catch (error) {
         if (error instanceof RevisionConflictError) useSessionStore.getState().setConflict(error.current);
+        else if (error instanceof AuthRequiredError) setAuthMessage(error.message);
         else setStatusMessage("保存失败，本地草稿已保留");
       }
     } else {
@@ -196,8 +231,9 @@ export function App() {
       const projects = await listProjectSessions();
       useSessionStore.getState().setRecentProjects(projects);
       setRecentOpen(true);
-    } catch {
-      setStatusMessage("无法读取最近工程，请确认 TRPG Master 已启动");
+    } catch (error) {
+      if (error instanceof AuthRequiredError) setAuthMessage(error.message);
+      else setStatusMessage("无法读取最近工程，请确认 TRPG Master 已启动");
     }
   };
 
@@ -210,7 +246,7 @@ export function App() {
       setRecentOpen(false);
       setStatusMessage(`已打开 ${remote.project.manifest.title}`);
     } catch (error) {
-      setStatusMessage(error instanceof Error ? error.message : "工程无法打开");
+      reportError(error, "工程无法打开");
     }
   };
 
@@ -221,7 +257,7 @@ export function App() {
       const errors = result.diagnostics.filter((item) => item.level === "error").length;
       setStatusMessage(errors ? `编译完成：${errors} 项错误` : `编译通过 · ${result.compiler_version || "compiler"} · ${result.trace.length} 条 trace`);
     } catch (error) {
-      setStatusMessage(error instanceof Error ? error.message : "权威编译失败");
+      reportError(error, "权威编译失败");
     }
   };
 
@@ -257,6 +293,128 @@ export function App() {
       downloadProject(project);
       setStatusMessage("工程 JSON 已导出");
     }
+  };
+
+  /** 导出 .trpgmod：先 flush 未保存的自动保存（700ms 防抖可能仍有在途修改），再请求打包。 */
+  const handleExportModule = async () => {
+    const session = useSessionStore.getState();
+    if (!session.sessionId || session.syncState === "conflict") {
+      setStatusMessage("工程服务未连接，无法导出 .trpgmod");
+      return;
+    }
+    setStatusMessage("正在保存并打包 .trpgmod…");
+    try {
+      const saved = await updateProjectSession(
+        session.sessionId,
+        session.remoteRevision,
+        useEditorStore.getState().project,
+      );
+      useSessionStore.getState().connect(saved);
+      markSaved();
+    } catch (error) {
+      if (error instanceof RevisionConflictError) useSessionStore.getState().setConflict(error.current);
+      else reportError(error, "保存失败，无法导出");
+      return;
+    }
+    try {
+      const current = useEditorStore.getState().project;
+      const fallback = `${current.manifest.id || "module"}-${current.manifest.version || "0"}.trpgmod`;
+      const result = await exportProjectPackage(session.sessionId, fallback);
+      setInstallState({ busy: false, message: "", failed: false });
+      setExportDialog({ kind: "ready", ...result });
+      setStatusMessage(`已导出 ${result.filename}`);
+    } catch (error) {
+      if (error instanceof AuthRequiredError) {
+        setAuthMessage(error.message);
+      } else if (error instanceof BackendValidationError) {
+        setInstallState({ busy: false, message: "", failed: false });
+        setExportDialog({
+          kind: "failed",
+          message: `导出失败：${error.message}（${error.errorCode}）`,
+          details: error.details,
+        });
+      } else {
+        reportError(error, "导出失败");
+      }
+    }
+  };
+
+  const handleDownloadPackage = () => {
+    if (!exportDialog || exportDialog.kind !== "ready") return;
+    const url = URL.createObjectURL(exportDialog.blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = exportDialog.filename;
+    anchor.click();
+    URL.revokeObjectURL(url);
+    setStatusMessage(`已下载 ${exportDialog.filename}`);
+  };
+
+  /** 把刚导出的包安装到后端模组库并切换，然后新标签打开游戏。 */
+  const handleInstallAndPlay = async () => {
+    if (!exportDialog || exportDialog.kind !== "ready" || installState.busy) return;
+    const { blob, filename } = exportDialog;
+    setInstallState({ busy: true, message: "正在安装到后端模组库…", failed: false });
+    try {
+      await installModulePackage(blob, filename);
+    } catch (error) {
+      if (error instanceof AuthRequiredError) {
+        setAuthMessage(error.message);
+        return;
+      }
+      const details = error instanceof BackendValidationError && error.details.length > 0
+        ? `：${error.details.join("；")}`
+        : "";
+      setInstallState({
+        busy: false,
+        message: `安装失败：${error instanceof Error ? error.message : "未知错误"}${details}`,
+        failed: true,
+      });
+      return;
+    }
+    setInstallState({ busy: true, message: "安装完成，正在切换当前模组…", failed: false });
+    let switched: boolean;
+    try {
+      switched = await switchActiveModule(useEditorStore.getState().project.manifest.id);
+    } catch (error) {
+      if (error instanceof AuthRequiredError) {
+        setAuthMessage(error.message);
+        return;
+      }
+      setInstallState({
+        busy: false,
+        message: `模组已安装，但切换失败：${error instanceof Error ? error.message : "未知错误"}`,
+        failed: true,
+      });
+      return;
+    }
+    setInstallState({
+      busy: false,
+      message: switched
+        ? "已安装并切换为当前模组，正在打开游戏…"
+        : "已安装（云端账号模式不可切换模组，请在主站手动选择），正在打开游戏…",
+      failed: false,
+    });
+    window.open("/", "_blank", "noopener");
+  };
+
+  /** 反向导入：.trpgmod → 新工程会话（NewProjectDialog 内联展示错误）。 */
+  const handleImportPackage = async (file: File) => {
+    let remote;
+    try {
+      remote = await importProjectPackage(file, file.name);
+    } catch (error) {
+      if (error instanceof AuthRequiredError) {
+        setAuthMessage(error.message);
+        return;
+      }
+      throw error;
+    }
+    replaceProject(remote.project, true);
+    useSessionStore.getState().connect(remote);
+    window.localStorage.setItem(SESSION_KEY, remote.session_id);
+    setNewProjectOpen(false);
+    setStatusMessage(`已从 ${file.name} 创建工程：${remote.project.manifest.title}`);
   };
 
   const applyLoadedProject = (loaded: typeof project, migrationReport: MigrationReport | null) => {
@@ -367,6 +525,33 @@ export function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [handleSave]);
 
+  if (authMessage) {
+    return (
+      <div className="app-shell auth-shell">
+        <main className="auth-required">
+          <ShieldAlert size={40} strokeWidth={1.6} />
+          <h1>需要管理员登录</h1>
+          <p>
+            {authMessage}。云端部署的模组工坊只对管理员开放；编辑器与主站同源，
+            登录 Cookie 自动共享。请在新标签页完成主站登录，然后回到本页重试。
+          </p>
+          <div className="auth-actions">
+            <a className="primary-button" href="/?mode=online" target="_blank" rel="noreferrer">
+              前往主站登录
+            </a>
+            <button
+              type="button"
+              className="tool-button"
+              onClick={() => { setAuthMessage(null); setConnectNonce((nonce) => nonce + 1); }}
+            >
+              我已登录，重试
+            </button>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
   return (
     <div className="app-shell">
       <TopBar
@@ -382,6 +567,7 @@ export function App() {
         }}
         onOpen={() => void handleOpenProject()}
         onExport={() => void handleExport()}
+        onExportModule={() => void handleExportModule()}
         onUndo={undo}
         onRedo={redo}
         onValidate={() => {
@@ -427,7 +613,16 @@ export function App() {
         <span>UTF-8</span>
       </footer>
       {recentOpen && <RecentProjectsDialog projects={session.recentProjects} onOpen={(id) => void openRemoteProject(id)} onClose={() => setRecentOpen(false)} />}
-      {newProjectOpen && <NewProjectDialog onCreate={(values) => void handleNew(values)} onClose={() => setNewProjectOpen(false)} />}
+      {newProjectOpen && <NewProjectDialog onCreate={(values) => void handleNew(values)} onImportPackage={handleImportPackage} onClose={() => setNewProjectOpen(false)} />}
+      {exportDialog && (
+        <ExportPackageDialog
+          data={exportDialog}
+          installState={installState}
+          onDownload={handleDownloadPackage}
+          onInstall={() => void handleInstallAndPlay()}
+          onClose={() => setExportDialog(null)}
+        />
+      )}
       {releaseOpen && (
         <ReleaseChecklistDialog
           project={project}

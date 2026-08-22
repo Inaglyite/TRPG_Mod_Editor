@@ -144,3 +144,65 @@ describe("v1 to v2 migration", () => {
     expect(project.module.format_version).toBe("2.0");
   });
 });
+
+describe("skills parsing", () => {
+  it("round-trips skills through JSON serialization with defaults filled", () => {
+    const project = createDefaultProject();
+    project.skills = [
+      { name: "spot_clue", body: "# 发现线索\n\n仔细观察。" },
+      {
+        name: "calm_down",
+        body: "# 安抚\n\n稳定情绪。",
+        version: "1.2",
+        description: "安抚 NPC",
+        required_tools: ["roll_dice"],
+        allowed_tools: ["send_message"],
+      },
+    ];
+
+    const parsed = parseEditorProject(JSON.parse(JSON.stringify(project)));
+    expect(parsed.skills).toEqual([
+      {
+        name: "spot_clue",
+        body: "# 发现线索\n\n仔细观察。",
+        version: "0",
+        description: "",
+        required_tools: [],
+        allowed_tools: [],
+      },
+      {
+        name: "calm_down",
+        body: "# 安抚\n\n稳定情绪。",
+        version: "1.2",
+        description: "安抚 NPC",
+        required_tools: ["roll_dice"],
+        allowed_tools: ["send_message"],
+      },
+    ]);
+  });
+
+  it("leaves projects without skills untouched", () => {
+    const parsed = parseEditorProject(JSON.parse(JSON.stringify(createDefaultProject())));
+    expect(parsed.skills).toBeUndefined();
+  });
+
+  it("rejects malformed skills with clear errors", () => {
+    const base = () => JSON.parse(JSON.stringify(createDefaultProject())) as Record<string, unknown>;
+
+    const notArray = base();
+    notArray.skills = { name: "x" };
+    expect(() => parseEditorProject(notArray)).toThrow("工程 skills 必须是数组");
+
+    const missingName = base();
+    missingName.skills = [{ body: "正文" }];
+    expect(() => parseEditorProject(missingName)).toThrow("skills[0] 缺少 name");
+
+    const missingBody = base();
+    missingBody.skills = [{ name: "ok_name" }];
+    expect(() => parseEditorProject(missingBody)).toThrow("skills[0] 缺少 body");
+
+    const badTools = base();
+    badTools.skills = [{ name: "ok_name", body: "正文", required_tools: "roll_dice" }];
+    expect(() => parseEditorProject(badTools)).toThrow("skills[0].required_tools 必须是数组");
+  });
+});

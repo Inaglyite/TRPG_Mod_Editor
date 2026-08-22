@@ -20,16 +20,28 @@ const validateLorebook = ajv.compile(lorebookSchema);
 
 const ENTITY_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 
+// 以下 Skill 约束契约源自后端 src/editor_projects.py 的 EditorSkillDraft
+// （name 正则、256 KiB 正文上限、64 条上限、工具名 TOOL_NAME_RE）。
+const SKILL_NAME_PATTERN = /^[a-z0-9_]{1,80}$/;
+const TOOL_NAME_PATTERN = /^[a-z][a-z0-9_]{0,79}$/;
+const MAX_SKILL_BODY_BYTES = 256 * 1024;
+const MAX_SKILLS_PER_PROJECT = 64;
+const MAX_SKILL_DESCRIPTION_LENGTH = 120;
+
 function selectionFromPath(path: string): EntitySelection | undefined {
   const match = path.match(/^module\.(scenes|npcs|clues|endings)\.([^.]+)/);
-  if (!match) return path.startsWith("manifest") ? { kind: "manifest" } : undefined;
-  const kindMap: Record<string, EntityKind> = {
-    scenes: "scene",
-    npcs: "npc",
-    clues: "clue",
-    endings: "ending",
-  };
-  return { kind: kindMap[match[1]], id: match[2] };
+  if (match) {
+    const kindMap: Record<string, EntityKind> = {
+      scenes: "scene",
+      npcs: "npc",
+      clues: "clue",
+      endings: "ending",
+    };
+    return { kind: kindMap[match[1]], id: match[2] };
+  }
+  if (path.startsWith("manifest")) return { kind: "manifest" };
+  if (path.startsWith("skills")) return { kind: "skills" };
+  return undefined;
 }
 
 function schemaDiagnostic(root: "manifest" | "module" | "lorebook", error: ErrorObject, index: number): Diagnostic {
@@ -502,6 +514,71 @@ export function validateProject(project: EditorProject): Diagnostic[] {
 
   if (!manifest.license.trim()) {
     pushDiagnostic(diagnostics, "warning", "manifest.license", "尚未声明内容许可证");
+  }
+
+  const skills = project.skills ?? [];
+  if (skills.length > MAX_SKILLS_PER_PROJECT) {
+    pushDiagnostic(
+      diagnostics,
+      "error",
+      "skills",
+      `自定义 Skill 数量超过上限 ${MAX_SKILLS_PER_PROJECT} 个`,
+    );
+  }
+  const seenSkillNames = new Set<string>();
+  const utf8 = new TextEncoder();
+  skills.forEach((skill, index) => {
+    const prefix = `skills[${index}]`;
+    if (!SKILL_NAME_PATTERN.test(skill.name)) {
+      pushDiagnostic(
+        diagnostics,
+        "error",
+        `${prefix}.name`,
+        `Skill 名称 ${skill.name || "（空）"} 只能含 1-80 位小写字母/数字/下划线`,
+      );
+    } else if (seenSkillNames.has(skill.name)) {
+      pushDiagnostic(diagnostics, "error", `${prefix}.name`, `Skill 名称 ${skill.name} 重复`);
+    }
+    seenSkillNames.add(skill.name);
+    if (!skill.body.trim()) {
+      pushDiagnostic(diagnostics, "error", `${prefix}.body`, "Skill 正文不能为空");
+    } else if (utf8.encode(skill.body).length > MAX_SKILL_BODY_BYTES) {
+      pushDiagnostic(
+        diagnostics,
+        "error",
+        `${prefix}.body`,
+        `Skill ${skill.name || index} 正文超过 256 KiB`,
+      );
+    }
+    if ((skill.description ?? "").length > MAX_SKILL_DESCRIPTION_LENGTH) {
+      pushDiagnostic(
+        diagnostics,
+        "error",
+        `${prefix}.description`,
+        `Skill 描述不能超过 ${MAX_SKILL_DESCRIPTION_LENGTH} 个字符`,
+      );
+    }
+    for (const key of ["required_tools", "allowed_tools"] as const) {
+      for (const tool of skill[key] ?? []) {
+        if (!TOOL_NAME_PATTERN.test(tool)) {
+          pushDiagnostic(
+            diagnostics,
+            "error",
+            `${prefix}.${key}`,
+            `工具名 ${tool || "（空）"} 须匹配 ^[a-z][a-z0-9_]{0,79}$`,
+          );
+        }
+      }
+    }
+  });
+
+  if (skills.length > 0 && !manifest.capabilities.includes("custom_skills")) {
+    pushDiagnostic(
+      diagnostics,
+      "advice",
+      "manifest.capabilities",
+      "已定义自定义 Skill，建议勾选 custom_skills 能力（导出时会自动补充）",
+    );
   }
   if (!manifest.author.trim()) {
     pushDiagnostic(diagnostics, "advice", "manifest.author", "尚未填写作者信息");
