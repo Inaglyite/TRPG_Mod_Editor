@@ -29,7 +29,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function fillDefaults<T extends object>(target: Record<string, unknown>, defaults: T): void {
+function fillDefaults<T extends object>(
+  target: Record<string, unknown>,
+  defaults: T,
+): void {
   for (const [key, value] of Object.entries(defaults)) {
     if (!(key in target)) target[key] = structuredClone(value);
   }
@@ -80,7 +83,10 @@ const CLUE_DEFAULTS: Omit<ClueDefinition, "text"> = {
   extensions: {},
 };
 
-const ENDING_DEFAULTS: Omit<EndingDefinition, "title" | "trigger" | "description"> = {
+const ENDING_DEFAULTS: Omit<
+  EndingDefinition,
+  "title" | "trigger" | "description"
+> = {
   ending_type: "neutral",
   required_flags: {},
 };
@@ -98,7 +104,8 @@ function parseSkillDrafts(value: unknown): SkillDraft[] | undefined {
   if (value === undefined || value === null) return undefined;
   if (!Array.isArray(value)) throw new Error("工程 skills 必须是数组");
   return value.map((item, index) => {
-    if (!isRecord(item)) throw new Error(`skills[${index}] 不是有效的 Skill 对象`);
+    if (!isRecord(item))
+      throw new Error(`skills[${index}] 不是有效的 Skill 对象`);
     if (typeof item.name !== "string" || !item.name.trim()) {
       throw new Error(`skills[${index}] 缺少 name`);
     }
@@ -157,18 +164,68 @@ export function normalizeProject(project: EditorProject): EditorProject {
   }
 
   const moduleDef = project.module;
-  for (const npc of Object.values(moduleDef.npcs)) fillDefaults(npc as unknown as Record<string, unknown>, NPC_DEFAULTS);
-  for (const scene of Object.values(moduleDef.scenes)) fillDefaults(scene as unknown as Record<string, unknown>, SCENE_DEFAULTS);
-  for (const clue of Object.values(moduleDef.clues)) fillDefaults(clue as unknown as Record<string, unknown>, CLUE_DEFAULTS);
-  for (const ending of Object.values(moduleDef.endings)) fillDefaults(ending as unknown as Record<string, unknown>, ENDING_DEFAULTS);
+  for (const npc of Object.values(moduleDef.npcs))
+    fillDefaults(npc as unknown as Record<string, unknown>, NPC_DEFAULTS);
+  for (const scene of Object.values(moduleDef.scenes))
+    fillDefaults(scene as unknown as Record<string, unknown>, SCENE_DEFAULTS);
+  for (const clue of Object.values(moduleDef.clues))
+    fillDefaults(clue as unknown as Record<string, unknown>, CLUE_DEFAULTS);
+  for (const ending of Object.values(moduleDef.endings))
+    fillDefaults(ending as unknown as Record<string, unknown>, ENDING_DEFAULTS);
+  for (const scene of Object.values(moduleDef.scenes)) {
+    for (const encounter of scene.encounters)
+      fillDefaults(encounter as unknown as Record<string, unknown>, {
+        availability: "guaranteed",
+        required_flags: {},
+        forbidden_flags: {},
+        luck_difficulty: "regular",
+        repeat: "once",
+        on_present_text: "",
+        on_absent_text: "",
+      });
+  }
+  for (const clue of Object.values(moduleDef.clues)) {
+    for (const rule of clue.discovery_rules) {
+      fillDefaults(rule as unknown as Record<string, unknown>, {
+        approach_text: "",
+        skill: null,
+        check_type: null,
+        difficulty: "regular",
+        requires_success: false,
+        sanity_severity: null,
+        npc_reveals: [],
+        fallback: null,
+      });
+      if (rule.fallback)
+        fillDefaults(rule.fallback as unknown as Record<string, unknown>, {
+          clue_id: null,
+          narrative: "",
+          cost_clock: null,
+          cost_amount: 0,
+        });
+    }
+  }
+  const initial = moduleDef.initial_state;
+  const initialDefaults = createDefaultProject().module.initial_state;
+  fillDefaults(initial as unknown as Record<string, unknown>, initialDefaults);
+  fillDefaults(
+    initial.pc as unknown as Record<string, unknown>,
+    initialDefaults.pc,
+  );
   for (const group of ["npcs", "scenes", "clues"] as const) {
     for (const asset of Object.values(moduleDef.assets[group])) {
       fillDefaults(asset as unknown as Record<string, unknown>, {
         label: "",
         alt: "",
         media_type: "",
-        reveal_on: null,
+        reveal_on: [],
       });
+      for (const trigger of asset.reveal_on)
+        fillDefaults(trigger as unknown as Record<string, unknown>, {
+          entity_id: null,
+          match_all: [],
+          match_any: [],
+        });
     }
   }
   for (const skill of project.skills ?? []) {
@@ -177,7 +234,10 @@ export function normalizeProject(project: EditorProject): EditorProject {
 
   // 编辑器内容是包文件路径的单一事实来源，打开工程时收敛 manifest 引用。
   manifest.keeper_document = project.keeperDocument.trim() ? "keeper.md" : null;
-  manifest.theme = project.theme && Object.keys(project.theme).length > 0 ? "theme.json" : null;
+  manifest.theme =
+    project.theme && Object.keys(project.theme).length > 0
+      ? "theme.json"
+      : null;
   manifest.lorebook = project.lorebook ? "lorebook.json" : null;
   return project;
 }
@@ -187,10 +247,14 @@ export function normalizeProject(project: EditorProject): EditorProject {
  * task 线索选为主线、为缺 fallback 的检定失败路径插入 grant_clue。候选主线线索
  * 没有发现规则时跳过而不是报错，保证迁移永远产出可编译工程。
  */
-export function migrateV1ToV2(
-  project: EditorProject,
-): { project: EditorProject; report: MigrationReport | null } {
-  if (project.manifest.format_version !== "1.0" || project.module.format_version !== "1.0") {
+export function migrateV1ToV2(project: EditorProject): {
+  project: EditorProject;
+  report: MigrationReport | null;
+} {
+  if (
+    project.manifest.format_version !== "1.0" ||
+    project.module.format_version !== "1.0"
+  ) {
     return { project, report: null };
   }
   const manifest = structuredClone(project.manifest);
@@ -209,7 +273,9 @@ export function migrateV1ToV2(
 
   const insertedFallbacks: string[] = [];
   for (const clueId of essential) {
-    for (const [index, rule] of (module.clues[clueId].discovery_rules ?? []).entries()) {
+    for (const [index, rule] of (
+      module.clues[clueId].discovery_rules ?? []
+    ).entries()) {
       if (rule.requires_success && !rule.fallback) {
         rule.fallback = {
           mode: "grant_clue",
@@ -218,7 +284,9 @@ export function migrateV1ToV2(
           cost_clock: null,
           cost_amount: 0,
         };
-        insertedFallbacks.push(`module.clues.${clueId}.discovery_rules[${index}].fallback`);
+        insertedFallbacks.push(
+          `module.clues.${clueId}.discovery_rules[${index}].fallback`,
+        );
       }
     }
   }
@@ -261,10 +329,15 @@ export function parseEditorProject(value: unknown): EditorProject {
   return parseEditorProjectWithReport(value).project;
 }
 
-export function parseEditorProjectWithReport(
-  value: unknown,
-): { project: EditorProject; migrationReport: MigrationReport | null } {
-  if (!isRecord(value) || !isRecord(value.manifest) || !isRecord(value.module)) {
+export function parseEditorProjectWithReport(value: unknown): {
+  project: EditorProject;
+  migrationReport: MigrationReport | null;
+} {
+  if (
+    !isRecord(value) ||
+    !isRecord(value.manifest) ||
+    !isRecord(value.module)
+  ) {
     throw new Error("文件不是有效的 TRPG Mod Editor 工程");
   }
   if (value.editor_version !== 1 && value.editor_version !== 2) {
@@ -286,7 +359,8 @@ export function parseEditorProjectWithReport(
     editor_version: 2,
     manifest: base.manifest as EditorProject["manifest"],
     module: base.module as EditorProject["module"],
-    keeperDocument: typeof base.keeperDocument === "string" ? base.keeperDocument : "",
+    keeperDocument:
+      typeof base.keeperDocument === "string" ? base.keeperDocument : "",
     theme: isRecord(base.theme) ? base.theme : {},
     lorebook: isRecord(base.lorebook) ? base.lorebook : null,
   };
@@ -302,8 +376,9 @@ export function parseEditorProjectWithReport(
 
 export function loadDraft(): EditorProject {
   if (typeof window === "undefined") return createDefaultProject();
-  const serialized = window.localStorage.getItem(DRAFT_STORAGE_KEY)
-    ?? window.localStorage.getItem(LEGACY_DRAFT_STORAGE_KEY);
+  const serialized =
+    window.localStorage.getItem(DRAFT_STORAGE_KEY) ??
+    window.localStorage.getItem(LEGACY_DRAFT_STORAGE_KEY);
   if (!serialized) return createDefaultProject();
   try {
     return parseEditorProject(JSON.parse(serialized));
@@ -317,7 +392,10 @@ export function saveDraft(project: EditorProject): void {
 }
 
 /** 解析工程 JSON 文本（浏览器 File 与 Electron 桌面文件共用）。 */
-export function parseProjectText(text: string): { project: EditorProject; migrationReport: MigrationReport | null } {
+export function parseProjectText(text: string): {
+  project: EditorProject;
+  migrationReport: MigrationReport | null;
+} {
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
@@ -329,7 +407,10 @@ export function parseProjectText(text: string): { project: EditorProject; migrat
 
 export async function readProjectFile(
   file: File,
-): Promise<{ project: EditorProject; migrationReport: MigrationReport | null }> {
+): Promise<{
+  project: EditorProject;
+  migrationReport: MigrationReport | null;
+}> {
   return parseProjectText(await file.text());
 }
 

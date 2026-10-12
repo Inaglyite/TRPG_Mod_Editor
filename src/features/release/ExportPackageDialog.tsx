@@ -1,4 +1,5 @@
 import { Download, Package, PlayCircle, X } from "lucide-react";
+import { useDialogFocus } from "../../components/useDialogFocus";
 
 export type ExportDialogData =
   | { kind: "ready"; blob: Blob; filename: string }
@@ -19,29 +20,70 @@ export function ExportPackageDialog(props: {
   onClose: () => void;
 }) {
   const { data, installState } = props;
+  const dialog = useDialogFocus<HTMLElement>(() => {
+    if (!installState.busy) props.onClose();
+  });
   return (
-    <div className="dialog-backdrop" role="presentation" onMouseDown={() => { if (!installState.busy) props.onClose(); }}>
-      <section className="project-dialog release-dialog" role="dialog" aria-modal="true" aria-labelledby="export-title" onMouseDown={(event) => event.stopPropagation()}>
+    <div
+      className="dialog-backdrop"
+      role="presentation"
+      onMouseDown={() => {
+        if (!installState.busy) props.onClose();
+      }}
+    >
+      <section
+        ref={dialog}
+        className="project-dialog release-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="export-title"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
         <header>
-          <div><Package size={18} /><strong id="export-title">导出 .trpgmod</strong></div>
-          <button type="button" className="icon-button" onClick={props.onClose} disabled={installState.busy} aria-label="关闭"><X size={18} /></button>
+          <div>
+            <Package size={18} />
+            <strong id="export-title">导出 .trpgmod</strong>
+          </div>
+          <button
+            type="button"
+            className="icon-button"
+            onClick={props.onClose}
+            disabled={installState.busy}
+            aria-label="关闭"
+          >
+            <X size={18} />
+          </button>
         </header>
         <div className="release-body">
           {data.kind === "ready" && (
             <>
               <p className="release-meta">
-                打包成功：<code>{data.filename}</code>（{(data.blob.size / 1024).toFixed(1)} KiB）
+                打包成功：<code>{data.filename}</code>（
+                {(data.blob.size / 1024).toFixed(1)} KiB）
               </p>
               <div className="release-actions">
-                <button type="button" className="primary-button" onClick={props.onDownload}>
+                <button
+                  type="button"
+                  className="primary-button"
+                  onClick={props.onDownload}
+                >
                   <Download size={15} /> 下载模组包
                 </button>
-                <button type="button" className="tool-button" onClick={props.onInstall} disabled={installState.busy}>
+                <button
+                  type="button"
+                  className="tool-button"
+                  onClick={props.onInstall}
+                  disabled={installState.busy}
+                >
                   <PlayCircle size={15} /> 安装到后端并试玩
                 </button>
               </div>
               {installState.message && (
-                <p className={installState.failed ? "release-failures" : "release-meta"}>
+                <p
+                  className={
+                    installState.failed ? "release-failures" : "release-meta"
+                  }
+                >
                   {installState.message}
                 </p>
               )}
@@ -54,7 +96,9 @@ export function ExportPackageDialog(props: {
                 <ul className="release-items">
                   {data.details.map((detail, index) => (
                     <li key={index} className="release-item is-fail">
-                      <span className="release-status" aria-hidden="true">✕</span>
+                      <span className="release-status" aria-hidden="true">
+                        ✕
+                      </span>
                       <span className="release-label">{detail}</span>
                     </li>
                   ))}

@@ -23,6 +23,10 @@ export default tseslint.config(
     },
   },
   {
+    files: ["playwright.config.ts", "e2e/**/*.ts"],
+    languageOptions: { globals: { ...globals.browser, ...globals.node } },
+  },
+  {
     // Electron 主进程与 preload 是 Node 环境
     files: ["electron/**/*.ts"],
     languageOptions: {

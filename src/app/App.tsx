@@ -5,7 +5,11 @@ import { EditorWorkspace } from "../components/EditorWorkspace";
 import { EntityTree } from "../components/EntityTree";
 import { TopBar } from "../components/TopBar";
 import { RecentProjectsDialog } from "../components/RecentProjectsDialog";
-import { NewProjectDialog, type NewProjectValues } from "../components/NewProjectDialog";
+import { EditorUpdateDialog } from "../components/EditorUpdateDialog";
+import {
+  NewProjectDialog,
+  type NewProjectValues,
+} from "../components/NewProjectDialog";
 import { validateProject } from "../domain/validation";
 import type { MigrationReport } from "../features/project/project-io";
 import {
@@ -38,6 +42,14 @@ import {
 import { buildErrorReport } from "../services/error-report";
 import { isElectronHost, type UpdateStatus } from "../services/host";
 import { useSessionStore } from "../store/session-store";
+import {
+  createProjectSaveQueue,
+  StaleSessionSaveError,
+} from "../services/project-save-queue";
+import {
+  hasWorkspaceDrafts,
+  useWorkspaceDrafts,
+} from "../store/workspace-drafts";
 
 const SESSION_KEY = "trpg-mod-editor:active-session:v1";
 
@@ -47,7 +59,11 @@ export function App() {
   const revision = useEditorStore((state) => state.revision);
   const historyLength = useEditorStore((state) => state.history.length);
   const futureLength = useEditorStore((state) => state.future.length);
-  const dirty = useEditorStore(isProjectDirty);
+  const projectDirty = useEditorStore(isProjectDirty);
+  const pendingDraft = useWorkspaceDrafts(
+    (state) => state.pending.source || state.pending.content,
+  );
+  const dirty = projectDirty || pendingDraft;
   const select = useEditorStore((state) => state.select);
   const addEntity = useEditorStore((state) => state.addEntity);
   const renameEntity = useEditorStore((state) => state.renameEntity);
@@ -60,18 +76,48 @@ export function App() {
   const fileInput = useRef<HTMLInputElement>(null);
   const [statusMessage, setStatusMessage] = useState("本地草稿已启用");
   const [authMessage, setAuthMessage] = useState<string | null>(null);
-  const [exportDialog, setExportDialog] = useState<ExportDialogData | null>(null);
-  const [installState, setInstallState] = useState<InstallState>({ busy: false, message: "", failed: false });
+  const [exportDialog, setExportDialog] = useState<ExportDialogData | null>(
+    null,
+  );
+  const [installState, setInstallState] = useState<InstallState>({
+    busy: false,
+    message: "",
+    failed: false,
+  });
   const [recentOpen, setRecentOpen] = useState(false);
+  const [editorUpdateCheck, setEditorUpdateCheck] = useState(0);
+  const [navigationOpen, setNavigationOpen] = useState(false);
+  const [inspectorOpen, setInspectorOpen] = useState(
+    () => window.innerWidth > 1180,
+  );
   const [newProjectOpen, setNewProjectOpen] = useState(false);
   const [releaseOpen, setReleaseOpen] = useState(false);
-  const [appVersion, setAppVersion] = useState("0.3.0");
+  const [appVersion, setAppVersion] = useState(__EDITOR_VERSION__);
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null);
   const initialized = useRef(false);
   const session = useSessionStore();
+  const queueSave = useMemo(
+    () =>
+      createProjectSaveQueue(
+        () => useSessionStore.getState(),
+        (saved) => useSessionStore.getState().connect(saved),
+      ),
+    [],
+  );
 
   const diagnostics = useMemo(() => validateProject(project), [project]);
-  const errorCount = diagnostics.filter((item) => item.level === "error").length;
+  const errorCount = diagnostics.filter(
+    (item) => item.level === "error",
+  ).length;
+
+  useEffect(() => {
+    const narrow = window.matchMedia("(max-width: 1180px)");
+    const resize = () => {
+      if (narrow.matches) setInspectorOpen(false);
+    };
+    narrow.addEventListener("change", resize);
+    return () => narrow.removeEventListener("change", resize);
+  }, []);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -98,6 +144,7 @@ export function App() {
   useEffect(() => {
     let cancelled = false;
     async function connect() {
+      const originalRevision = useEditorStore.getState().revision;
       useSessionStore.getState().setSync("connecting", "正在连接工程服务…");
       try {
         const remembered = window.localStorage.getItem(SESSION_KEY);
@@ -106,6 +153,14 @@ export function App() {
           : await createProjectSession(useEditorStore.getState().project);
         if (cancelled) return;
         window.localStorage.setItem(SESSION_KEY, remote.session_id);
+        if (useEditorStore.getState().revision !== originalRevision) {
+          useSessionStore.getState().connect(remote);
+          useSessionStore.getState().setConflict(remote);
+          setStatusMessage(
+            "连接期间已有编辑，本地内容已保留，请选择要继续使用的版本",
+          );
+          return;
+        }
         replaceProject(remote.project, true);
         useSessionStore.getState().connect(remote);
         setAuthMessage(null);
@@ -115,65 +170,140 @@ export function App() {
           setAuthMessage(error.message);
           useSessionStore.getState().setSync("offline", "需要管理员登录");
         } else {
-          useSessionStore.getState().setSync("offline", "工程服务不可用，本地草稿仍会保存");
+          useSessionStore
+            .getState()
+            .setSync("offline", "工程服务不可用，本地草稿仍会保存");
         }
       } finally {
         initialized.current = true;
       }
     }
     void connect();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [replaceProject, connectNonce]);
 
   useEffect(() => {
-    if (!initialized.current || !session.sessionId || useSessionStore.getState().syncState === "conflict") return;
+    if (
+      !initialized.current ||
+      !session.sessionId ||
+      useSessionStore.getState().syncState === "conflict"
+    )
+      return;
     const timer = window.setTimeout(async () => {
       const current = useSessionStore.getState();
       if (!current.sessionId || current.syncState === "conflict") return;
       current.setSync("saving", "正在自动保存…");
       try {
-        const saved = await updateProjectSession(current.sessionId, current.remoteRevision, project);
+        const saved = await queueSave(current.sessionId, project);
         useSessionStore.getState().connect(saved);
-        markSaved();
+        if (useEditorStore.getState().project === project) markSaved();
       } catch (error) {
-        if (error instanceof RevisionConflictError) useSessionStore.getState().setConflict(error.current);
-        else if (error instanceof AuthRequiredError) setAuthMessage(error.message);
-        else useSessionStore.getState().setSync("offline", "自动保存失败，本地草稿已保留");
+        if (error instanceof StaleSessionSaveError) return;
+        if (error instanceof RevisionConflictError)
+          useSessionStore.getState().setConflict(error.current);
+        else if (error instanceof AuthRequiredError)
+          setAuthMessage(error.message);
+        else
+          useSessionStore
+            .getState()
+            .setSync("offline", "自动保存失败，本地草稿已保留");
       }
     }, 700);
     return () => window.clearTimeout(timer);
-  }, [markSaved, project, revision, session.sessionId]);
+  }, [markSaved, project, revision, session.sessionId, queueSave]);
 
   const handleSave = useCallback(async () => {
+    if (document.activeElement instanceof HTMLElement)
+      document.activeElement.blur();
     const session = useSessionStore.getState();
     const currentProject = useEditorStore.getState().project;
     if (session.sessionId && session.syncState !== "conflict") {
       try {
         session.setSync("saving", "正在保存…");
-        const saved = await updateProjectSession(session.sessionId, session.remoteRevision, currentProject);
+        const saved = await queueSave(session.sessionId, currentProject);
         useSessionStore.getState().connect(saved);
-        markSaved();
-        setStatusMessage("已保存到工程会话");
+        if (useEditorStore.getState().project === currentProject) markSaved();
+        setStatusMessage(
+          hasWorkspaceDrafts()
+            ? "工程已保存；配置或源码草稿尚未应用"
+            : "已保存到工程会话",
+        );
       } catch (error) {
-        if (error instanceof RevisionConflictError) useSessionStore.getState().setConflict(error.current);
-        else if (error instanceof AuthRequiredError) setAuthMessage(error.message);
+        if (error instanceof StaleSessionSaveError) return;
+        if (error instanceof RevisionConflictError)
+          useSessionStore.getState().setConflict(error.current);
+        else if (error instanceof AuthRequiredError)
+          setAuthMessage(error.message);
         else setStatusMessage("保存失败，本地草稿已保留");
       }
     } else {
       saveDraft(currentProject);
+      if (window.editorHost) {
+        try {
+          const result = await window.editorHost.saveProjectFile(
+            `${JSON.stringify(currentProject, null, 2)}\n`,
+            `${currentProject.manifest.id || "untitled"}.trpgmod-project.json`,
+          );
+          if (result.canceled) {
+            setStatusMessage("已取消文件保存，本地草稿仍保留");
+            return;
+          }
+          if (useEditorStore.getState().project === currentProject) markSaved();
+          setStatusMessage(
+            hasWorkspaceDrafts()
+              ? "工程文件已保存；配置或源码草稿尚未应用"
+              : `工程文件已保存：${result.filePath}`,
+          );
+        } catch (error) {
+          setStatusMessage(
+            error instanceof Error
+              ? error.message
+              : "文件保存失败，本地草稿仍保留",
+          );
+        }
+        return;
+      }
       markSaved();
-      setStatusMessage("已保存到本地草稿");
+      setStatusMessage(
+        hasWorkspaceDrafts()
+          ? "工程已保存；配置或源码草稿尚未应用"
+          : "已保存到本地草稿",
+      );
     }
-  }, [markSaved]);
+  }, [markSaved, queueSave]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       const command = event.ctrlKey || event.metaKey;
+      if (event.key === "Escape") {
+        setNavigationOpen(false);
+        if (window.innerWidth <= 1180) setInspectorOpen(false);
+      }
       if (!command) return;
+      if (event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setNavigationOpen(true);
+        window.requestAnimationFrame(() =>
+          document
+            .querySelector<HTMLInputElement>('[aria-label="搜索实体"]')
+            ?.focus(),
+        );
+        return;
+      }
+      const editingText =
+        event.target instanceof HTMLElement &&
+        (event.target.matches("input, textarea") ||
+          event.target.isContentEditable);
+      if (editingText && ["z", "y"].includes(event.key.toLowerCase())) return;
       if (event.key.toLowerCase() === "z" && !event.shiftKey) {
         event.preventDefault();
         undo();
-      } else if (event.key.toLowerCase() === "y" || (event.key.toLowerCase() === "z" && event.shiftKey)) {
+      } else if (
+        event.key.toLowerCase() === "y" ||
+        (event.key.toLowerCase() === "z" && event.shiftKey)
+      ) {
         event.preventDefault();
         redo();
       } else if (event.key.toLowerCase() === "s") {
@@ -187,7 +317,10 @@ export function App() {
 
   useEffect(() => {
     const warnBeforeClose = (event: BeforeUnloadEvent) => {
-      if (!isProjectDirty(useEditorStore.getState())) return;
+      if (document.activeElement instanceof HTMLElement)
+        document.activeElement.blur();
+      if (!isProjectDirty(useEditorStore.getState()) && !hasWorkspaceDrafts())
+        return;
       event.preventDefault();
     };
     window.addEventListener("beforeunload", warnBeforeClose);
@@ -198,13 +331,16 @@ export function App() {
     resetProject();
     const fresh = structuredClone(useEditorStore.getState().project);
     fresh.manifest.title = values.title.trim();
+    fresh.theme.title = values.title.trim();
     fresh.manifest.id = values.id.trim();
     fresh.manifest.author = values.author.trim();
     fresh.manifest.system = values.system.trim();
     replaceProject(fresh, true);
     setNewProjectOpen(false);
     try {
-      const created = await createProjectSession(useEditorStore.getState().project);
+      const created = await createProjectSession(
+        useEditorStore.getState().project,
+      );
       window.localStorage.setItem(SESSION_KEY, created.session_id);
       useSessionStore.getState().connect(created);
       setStatusMessage("已创建空白模组工程");
@@ -238,6 +374,11 @@ export function App() {
   };
 
   const openRemoteProject = async (sessionId: string) => {
+    if (
+      (isProjectDirty(useEditorStore.getState()) || hasWorkspaceDrafts()) &&
+      !window.confirm("当前工程有修改或未应用草稿，仍要打开另一个工程吗？")
+    )
+      return;
     try {
       const remote = await getProjectSession(sessionId);
       replaceProject(remote.project, true);
@@ -254,8 +395,14 @@ export function App() {
     setStatusMessage("正在调用 TRPG Master 权威编译器…");
     try {
       const result = await compileProject(project);
-      const errors = result.diagnostics.filter((item) => item.level === "error").length;
-      setStatusMessage(errors ? `编译完成：${errors} 项错误` : `编译通过 · ${result.compiler_version || "compiler"} · ${result.trace.length} 条 trace`);
+      const errors = result.diagnostics.filter(
+        (item) => item.level === "error",
+      ).length;
+      setStatusMessage(
+        errors
+          ? `编译完成：${errors} 项错误`
+          : `编译通过 · ${result.compiler_version || "compiler"} · ${result.trace.length} 条 trace`,
+      );
     } catch (error) {
       reportError(error, "权威编译失败");
     }
@@ -273,12 +420,17 @@ export function App() {
     const current = useSessionStore.getState();
     if (!current.sessionId || !current.conflict) return;
     try {
-      const saved = await updateProjectSession(current.sessionId, current.conflict.revision, project);
+      const saved = await updateProjectSession(
+        current.sessionId,
+        current.conflict.revision,
+        project,
+      );
       useSessionStore.getState().connect(saved);
       markSaved();
       setStatusMessage("已用本地版本覆盖服务器版本");
     } catch (error) {
-      if (error instanceof RevisionConflictError) useSessionStore.getState().setConflict(error.current);
+      if (error instanceof RevisionConflictError)
+        useSessionStore.getState().setConflict(error.current);
       else setStatusMessage("冲突处理失败，本地内容未丢失");
     }
   };
@@ -287,8 +439,13 @@ export function App() {
     const payload = `${JSON.stringify(project, null, 2)}\n`;
     const host = window.editorHost;
     if (host) {
-      const result = await host.saveProjectFile(payload, `${project.manifest.id || "untitled"}.trpgmod-project.json`);
-      setStatusMessage(result.canceled ? "已取消导出" : `工程 JSON 已导出：${result.filePath}`);
+      const result = await host.saveProjectFile(
+        payload,
+        `${project.manifest.id || "untitled"}.trpgmod-project.json`,
+      );
+      setStatusMessage(
+        result.canceled ? "已取消导出" : `工程 JSON 已导出：${result.filePath}`,
+      );
     } else {
       downloadProject(project);
       setStatusMessage("工程 JSON 已导出");
@@ -297,6 +454,12 @@ export function App() {
 
   /** 导出 .trpgmod：先 flush 未保存的自动保存（700ms 防抖可能仍有在途修改），再请求打包。 */
   const handleExportModule = async () => {
+    if (hasWorkspaceDrafts()) {
+      setStatusMessage(
+        "还有未应用的配置或源码草稿，请先应用到工程，再打包导出",
+      );
+      return;
+    }
     const session = useSessionStore.getState();
     if (!session.sessionId || session.syncState === "conflict") {
       setStatusMessage("工程服务未连接，无法导出 .trpgmod");
@@ -304,15 +467,13 @@ export function App() {
     }
     setStatusMessage("正在保存并打包 .trpgmod…");
     try {
-      const saved = await updateProjectSession(
-        session.sessionId,
-        session.remoteRevision,
-        useEditorStore.getState().project,
-      );
+      const exportedSnapshot = useEditorStore.getState().project;
+      const saved = await queueSave(session.sessionId, exportedSnapshot);
       useSessionStore.getState().connect(saved);
-      markSaved();
+      if (useEditorStore.getState().project === exportedSnapshot) markSaved();
     } catch (error) {
-      if (error instanceof RevisionConflictError) useSessionStore.getState().setConflict(error.current);
+      if (error instanceof RevisionConflictError)
+        useSessionStore.getState().setConflict(error.current);
       else reportError(error, "保存失败，无法导出");
       return;
     }
@@ -352,9 +513,14 @@ export function App() {
 
   /** 把刚导出的包安装到后端模组库并切换，然后新标签打开游戏。 */
   const handleInstallAndPlay = async () => {
-    if (!exportDialog || exportDialog.kind !== "ready" || installState.busy) return;
+    if (!exportDialog || exportDialog.kind !== "ready" || installState.busy)
+      return;
     const { blob, filename } = exportDialog;
-    setInstallState({ busy: true, message: "正在安装到后端模组库…", failed: false });
+    setInstallState({
+      busy: true,
+      message: "正在安装到后端模组库…",
+      failed: false,
+    });
     try {
       await installModulePackage(blob, filename);
     } catch (error) {
@@ -362,9 +528,10 @@ export function App() {
         setAuthMessage(error.message);
         return;
       }
-      const details = error instanceof BackendValidationError && error.details.length > 0
-        ? `：${error.details.join("；")}`
-        : "";
+      const details =
+        error instanceof BackendValidationError && error.details.length > 0
+          ? `：${error.details.join("；")}`
+          : "";
       setInstallState({
         busy: false,
         message: `安装失败：${error instanceof Error ? error.message : "未知错误"}${details}`,
@@ -372,10 +539,16 @@ export function App() {
       });
       return;
     }
-    setInstallState({ busy: true, message: "安装完成，正在切换当前模组…", failed: false });
+    setInstallState({
+      busy: true,
+      message: "安装完成，正在切换当前模组…",
+      failed: false,
+    });
     let switched: boolean;
     try {
-      switched = await switchActiveModule(useEditorStore.getState().project.manifest.id);
+      switched = await switchActiveModule(
+        useEditorStore.getState().project.manifest.id,
+      );
     } catch (error) {
       if (error instanceof AuthRequiredError) {
         setAuthMessage(error.message);
@@ -414,12 +587,21 @@ export function App() {
     useSessionStore.getState().connect(remote);
     window.localStorage.setItem(SESSION_KEY, remote.session_id);
     setNewProjectOpen(false);
-    setStatusMessage(`已从 ${file.name} 创建工程：${remote.project.manifest.title}`);
+    setStatusMessage(
+      `已从 ${file.name} 创建工程：${remote.project.manifest.title}`,
+    );
   };
 
-  const applyLoadedProject = (loaded: typeof project, migrationReport: MigrationReport | null) => {
+  const applyLoadedProject = (
+    loaded: typeof project,
+    migrationReport: MigrationReport | null,
+  ) => {
+    useSessionStore.getState().disconnect();
+    window.localStorage.removeItem(SESSION_KEY);
     replaceProject(loaded, true);
-    const loadedErrors = validateProject(loaded).filter((item) => item.level === "error").length;
+    const loadedErrors = validateProject(loaded).filter(
+      (item) => item.level === "error",
+    ).length;
     const migratedText = migrationReport
       ? `；已从 v1 无损迁移至 v2（原工程已备份到浏览器），主线线索 ${migrationReport.essential_clue_ids.length} 条、补插 fallback ${migrationReport.inserted_fallbacks.length} 处`
       : "";
@@ -435,7 +617,9 @@ export function App() {
       const { project: loaded, migrationReport } = parseProjectText(text);
       applyLoadedProject(loaded, migrationReport);
     } catch (error) {
-      setStatusMessage(error instanceof Error ? error.message : "工程文件无法打开");
+      setStatusMessage(
+        error instanceof Error ? error.message : "工程文件无法打开",
+      );
     }
   };
 
@@ -444,13 +628,20 @@ export function App() {
       const { project: loaded, migrationReport } = await readProjectFile(file);
       applyLoadedProject(loaded, migrationReport);
     } catch (error) {
-      setStatusMessage(error instanceof Error ? error.message : "工程文件无法打开");
+      setStatusMessage(
+        error instanceof Error ? error.message : "工程文件无法打开",
+      );
     } finally {
       if (fileInput.current) fileInput.current.value = "";
     }
   };
 
   const handleOpenProject = async () => {
+    if (
+      (isProjectDirty(useEditorStore.getState()) || hasWorkspaceDrafts()) &&
+      !window.confirm("当前工程有修改或未应用草稿，仍要打开另一个工程吗？")
+    )
+      return;
     if (isElectronHost()) {
       const result = await window.editorHost!.openProjectFile();
       if (result.canceled || result.content === undefined) return;
@@ -471,9 +662,11 @@ export function App() {
       const status = await host.checkUpdates();
       setUpdateStatus(status);
       setStatusMessage(
-        status.error ? `检查更新失败：${status.error}` :
-          status.available ? `发现新版本 ${status.nextVersion}（当前 ${status.currentVersion}）` :
-            `已是最新版本（${status.currentVersion}）`,
+        status.error
+          ? `检查更新失败：${status.error}`
+          : status.available
+            ? `发现新版本 ${status.nextVersion}（当前 ${status.currentVersion}）`
+            : `已是最新版本（${status.currentVersion}）`,
       );
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : "检查更新失败");
@@ -491,15 +684,28 @@ export function App() {
         title: project.manifest.title,
         formatVersion: project.module.format_version,
       },
-      diagnostics: diagnostics.map((item) => ({ level: item.level, path: item.path, message: item.message })),
+      diagnostics: diagnostics.map((item) => ({
+        level: item.level,
+        path: item.path,
+        message: item.message,
+      })),
       session: { syncState: session.syncState, revision },
     });
     const host = window.editorHost;
     if (host) {
-      const result = await host.exportReportFile(report.content, report.filename);
-      setStatusMessage(result.canceled ? "已取消导出报告" : `错误报告已导出：${result.filePath}`);
+      const result = await host.exportReportFile(
+        report.content,
+        report.filename,
+      );
+      setStatusMessage(
+        result.canceled
+          ? "已取消导出报告"
+          : `错误报告已导出：${result.filePath}`,
+      );
     } else {
-      const blob = new Blob([report.content], { type: "application/json;charset=utf-8" });
+      const blob = new Blob([report.content], {
+        type: "application/json;charset=utf-8",
+      });
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = url;
@@ -513,7 +719,10 @@ export function App() {
   useEffect(() => {
     const host = window.editorHost;
     if (!host) return;
-    void host.getAppVersion().then(setAppVersion).catch(() => {});
+    void host
+      .getAppVersion()
+      .then(setAppVersion)
+      .catch(() => {});
     const offOpen = host.onMenu("open-project", () => void handleOpenProject());
     const offSave = host.onMenu("save-project", () => void handleSave());
     return () => {
@@ -536,13 +745,21 @@ export function App() {
             登录 Cookie 自动共享。请在新标签页完成主站登录，然后回到本页重试。
           </p>
           <div className="auth-actions">
-            <a className="primary-button" href="/?mode=online" target="_blank" rel="noreferrer">
+            <a
+              className="primary-button"
+              href="/?mode=online"
+              target="_blank"
+              rel="noreferrer"
+            >
               前往主站登录
             </a>
             <button
               type="button"
               className="tool-button"
-              onClick={() => { setAuthMessage(null); setConnectNonce((nonce) => nonce + 1); }}
+              onClick={() => {
+                setAuthMessage(null);
+                setConnectNonce((nonce) => nonce + 1);
+              }}
             >
               我已登录，重试
             </button>
@@ -553,8 +770,11 @@ export function App() {
   }
 
   return (
-    <div className="app-shell">
+    <div
+      className={`app-shell${navigationOpen ? " navigation-open" : ""}${inspectorOpen ? " inspector-open" : ""}`}
+    >
       <TopBar
+        onCheckEditorUpdate={() => setEditorUpdateCheck((count) => count + 1)}
         title={project.manifest.title}
         version={project.manifest.version}
         formatVersion={project.module.format_version}
@@ -562,8 +782,19 @@ export function App() {
         canUndo={historyLength > 0}
         canRedo={futureLength > 0}
         errorCount={errorCount}
+        connected={!!session.sessionId && session.syncState !== "conflict"}
+        onSave={() => void handleSave()}
+        onToggleNav={() => {
+          setNavigationOpen((open) => !open);
+          if (window.innerWidth <= 1180) setInspectorOpen(false);
+        }}
+        onToggleInspector={() => {
+          setInspectorOpen((open) => !open);
+          setNavigationOpen(false);
+        }}
         onNew={() => {
-          if (!dirty || window.confirm("当前工程有未保存修改，仍要新建吗？")) setNewProjectOpen(true);
+          if (!dirty || window.confirm("当前工程有未保存修改，仍要新建吗？"))
+            setNewProjectOpen(true);
         }}
         onOpen={() => void handleOpenProject()}
         onExport={() => void handleExport()}
@@ -571,13 +802,19 @@ export function App() {
         onUndo={undo}
         onRedo={redo}
         onValidate={() => {
-          setStatusMessage(errorCount ? `校验完成：${errorCount} 项错误` : "校验完成：结构与引用均有效");
+          setInspectorOpen(true);
+          setStatusMessage(
+            errorCount
+              ? `校验完成：${errorCount} 项错误`
+              : "校验完成：结构与引用均有效",
+          );
         }}
         onRecent={() => void handleRecent()}
         onCompile={() => void handleCompile()}
         onSaveAs={() => void handleSaveAs()}
         onRelease={() => setReleaseOpen(true)}
       />
+      <EditorUpdateDialog checkRequest={editorUpdateCheck} dirty={dirty} />
       <input
         ref={fileInput}
         type="file"
@@ -592,28 +829,73 @@ export function App() {
         <EntityTree
           project={project}
           selection={selection}
-          onSelect={select}
+          onSelect={(next) => {
+            select(next);
+            setNavigationOpen(false);
+          }}
           onAdd={addEntity}
           onRename={renameEntity}
           onDuplicate={duplicateEntity}
         />
         <EditorWorkspace selection={selection} />
-        <DiagnosticsPanel diagnostics={diagnostics} project={project} onSelect={select} />
+        {inspectorOpen && (
+          <DiagnosticsPanel
+            diagnostics={diagnostics}
+            project={project}
+            selection={selection}
+            onSelect={(next) => {
+              select(next);
+              if (window.innerWidth <= 1180) setInspectorOpen(false);
+            }}
+            onClose={() => setInspectorOpen(false)}
+          />
+        )}
+        {navigationOpen && (
+          <button
+            className="navigation-backdrop"
+            aria-label="关闭内容导航"
+            onClick={() => setNavigationOpen(false)}
+          />
+        )}
       </div>
       <footer className="status-bar">
-        <span className={dirty ? "status-dirty" : "status-saved"}>{dirty ? "已修改" : "已保存"}</span>
-        <span>{statusMessage}</span>
-        <span className={`sync-state sync-${session.syncState}`}>{session.syncMessage}</span>
-        {session.syncState === "conflict" && <>
-          <button type="button" onClick={acceptRemote}>载入服务器版本</button>
-          <button type="button" onClick={() => void overwriteRemote()}>保留本地版本</button>
-        </>}
+        <span className={dirty ? "status-dirty" : "status-saved"}>
+          {pendingDraft ? "草稿待应用" : dirty ? "已修改" : "已保存"}
+        </span>
+        <span className="status-message" role="status" title={statusMessage}>
+          {statusMessage}
+        </span>
+        <span className={`sync-state sync-${session.syncState}`}>
+          {session.syncMessage}
+        </span>
+        {session.syncState === "conflict" && (
+          <>
+            <button type="button" onClick={acceptRemote}>
+              载入服务器版本
+            </button>
+            <button type="button" onClick={() => void overwriteRemote()}>
+              保留本地版本
+            </button>
+          </>
+        )}
         <span className="status-spacer" />
         <code>rev {revision}</code>
         <span>UTF-8</span>
       </footer>
-      {recentOpen && <RecentProjectsDialog projects={session.recentProjects} onOpen={(id) => void openRemoteProject(id)} onClose={() => setRecentOpen(false)} />}
-      {newProjectOpen && <NewProjectDialog onCreate={(values) => void handleNew(values)} onImportPackage={handleImportPackage} onClose={() => setNewProjectOpen(false)} />}
+      {recentOpen && (
+        <RecentProjectsDialog
+          projects={session.recentProjects}
+          onOpen={(id) => void openRemoteProject(id)}
+          onClose={() => setRecentOpen(false)}
+        />
+      )}
+      {newProjectOpen && (
+        <NewProjectDialog
+          onCreate={(values) => void handleNew(values)}
+          onImportPackage={handleImportPackage}
+          onClose={() => setNewProjectOpen(false)}
+        />
+      )}
       {exportDialog && (
         <ExportPackageDialog
           data={exportDialog}

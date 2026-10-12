@@ -1,0 +1,55 @@
+name: editor-web-release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "编辑器版本（major.minor.patch）"
+        required: true
+      notes:
+        description: "用户可见的更新说明"
+        required: true
+      test_release:
+        description: "预发布测试包（不进入正式更新通道）"
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      TRPG_EDITOR_VERSION: ${{ inputs.version }}
+      UPDATE_NOTES: ${{ inputs.notes }}
+      TEST_RELEASE: ${{ inputs.test_release }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: npm ci
+      - run: npm run check
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+      - name: Build and package browser update
+        run: |
+          python -c 'import os,pathlib; pathlib.Path("/tmp/editor-update-notes.txt").write_text(os.environ["UPDATE_NOTES"], encoding="utf-8")'
+          npx vite build --base=./ --outDir /tmp/editor-web-dist
+          python scripts/package-web-update.py --dist /tmp/editor-web-dist --output /tmp/editor-web-release --version "$TRPG_EDITOR_VERSION" --notes-file /tmp/editor-update-notes.txt
+      - name: Publish editor assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "$TEST_RELEASE" = "true" ]; then
+            tag="editor-web-test-$GITHUB_RUN_ID"
+            gh release create "$tag" --target "$GITHUB_SHA" --prerelease --latest=false --title "模组工坊 v$TRPG_EDITOR_VERSION（测试）" --notes-file /tmp/editor-update-notes.txt /tmp/editor-web-release/editor-web.zip /tmp/editor-web-release/editor-web-update.json
+          else
+            tag="editor-web-v$TRPG_EDITOR_VERSION"
+            gh release create "$tag" --target "$GITHUB_SHA" --title "模组工坊 v$TRPG_EDITOR_VERSION" --notes-file /tmp/editor-update-notes.txt /tmp/editor-web-release/editor-web.zip /tmp/editor-web-release/editor-web-update.json
+          fi

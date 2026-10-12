@@ -5,6 +5,7 @@ import { EditorHeading } from "../../components/EditorHeading";
 import type { ClueDefinition } from "../../domain/types";
 import { useEditorStore } from "../../store/editor-store";
 import { CheckGrid, FormField } from "./FormControls";
+import { DiscoveryRulesEditor } from "./DiscoveryRulesEditor";
 
 interface ClueFormValues extends Omit<ClueDefinition, "source" | "asset_id"> {
   source: string;
@@ -20,7 +21,9 @@ export function ClueEditor({ id }: { id: string }) {
   const updateClue = useEditorStore((state) => state.updateClue);
   const removeEntity = useEditorStore((state) => state.removeEntity);
   const clue = project.module.clues[id];
-  const form = useForm<ClueFormValues>({ defaultValues: clue ? toForm(clue) : undefined });
+  const form = useForm<ClueFormValues>({
+    defaultValues: clue ? toForm(clue) : undefined,
+  });
 
   useEffect(() => {
     if (clue) form.reset(toForm(clue));
@@ -100,7 +103,11 @@ export function ClueEditor({ id }: { id: string }) {
           <CheckGrid label="关联场景" emptyText="没有场景">
             {Object.entries(project.module.scenes).map(([sceneId, scene]) => (
               <label className="check-option" key={sceneId}>
-                <input type="checkbox" value={sceneId} {...form.register("related_scenes")} />
+                <input
+                  type="checkbox"
+                  value={sceneId}
+                  {...form.register("related_scenes")}
+                />
                 <span>{scene.name}</span>
               </label>
             ))}
@@ -108,13 +115,20 @@ export function ClueEditor({ id }: { id: string }) {
           <CheckGrid label="关联人物" emptyText="没有人物">
             {Object.entries(project.module.npcs).map(([npcId, npc]) => (
               <label className="check-option" key={npcId}>
-                <input type="checkbox" value={npcId} {...form.register("related_npcs")} />
+                <input
+                  type="checkbox"
+                  value={npcId}
+                  {...form.register("related_npcs")}
+                />
                 <span>{npc.name}</span>
               </label>
             ))}
           </CheckGrid>
         </section>
       </form>
+      <div className="editor-form" style={{ marginTop: 18 }}>
+        <DiscoveryRulesEditor id={id} />
+      </div>
     </div>
   );
 }

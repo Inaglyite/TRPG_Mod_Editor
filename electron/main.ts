@@ -75,8 +75,8 @@ function createWindow(): void {
       y: state.y,
       minWidth: 940,
       minHeight: 620,
-      title: "TRPG Mod Editor",
-      backgroundColor: "#252824",
+      title: "模组工坊 · TRPG Mod Editor",
+      backgroundColor: "#eef3f7",
       show: false,
       webPreferences: {
         preload: path.join(__dirname, "preload.js"),
@@ -118,7 +118,7 @@ function buildMenu(): void {
       label: "文件",
       submenu: [
         { label: "打开工程…", accelerator: "CmdOrCtrl+O", click: () => sendMenu("open-project") },
-        { label: "保存到工程会话", accelerator: "CmdOrCtrl+S", click: () => sendMenu("save-project") },
+        { label: "保存工程", accelerator: "CmdOrCtrl+S", click: () => sendMenu("save-project") },
         { type: "separator" },
         { role: "quit", label: "退出" },
       ],

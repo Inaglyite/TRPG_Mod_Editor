@@ -5,9 +5,13 @@ import { EditorHeading } from "../../components/EditorHeading";
 import type { EndingDefinition } from "../../domain/types";
 import { useEditorStore } from "../../store/editor-store";
 import { FormField } from "./FormControls";
+import { FlagConditions } from "./FlagConditions";
 
 export function EndingEditor({ id }: { id: string }) {
   const ending = useEditorStore((state) => state.project.module.endings[id]);
+  const declaredFlags = useEditorStore(
+    (state) => state.project.module.initial_state.flags,
+  );
   const updateEnding = useEditorStore((state) => state.updateEnding);
   const removeEntity = useEditorStore((state) => state.removeEntity);
   const form = useForm<EndingDefinition>({ defaultValues: ending });
@@ -20,7 +24,8 @@ export function EndingEditor({ id }: { id: string }) {
 
   const commit = () => {
     const values = form.getValues();
-    if (JSON.stringify(values) !== JSON.stringify(ending)) updateEnding(id, values);
+    if (JSON.stringify(values) !== JSON.stringify(ending))
+      updateEnding(id, values);
   };
 
   return (
@@ -31,7 +36,8 @@ export function EndingEditor({ id }: { id: string }) {
         id={id}
         icon={<Flag size={21} />}
         onDelete={() => {
-          if (window.confirm(`删除结局“${ending.title}”？`)) removeEntity("ending", id);
+          if (window.confirm(`删除结局“${ending.title}”？`))
+            removeEntity("ending", id);
         }}
       />
       <form className="editor-form" onBlur={commit}>
@@ -58,6 +64,16 @@ export function EndingEditor({ id }: { id: string }) {
           </div>
         </section>
       </form>
+      <section className="form-section" style={{ marginTop: 18 }}>
+        <h2>触发所需旗标</h2>
+        <FlagConditions
+          value={ending.required_flags}
+          declared={declaredFlags}
+          onChange={(flags) =>
+            updateEnding(id, { ...ending, required_flags: flags })
+          }
+        />
+      </section>
     </div>
   );
 }

@@ -1,22 +1,36 @@
-export const MANIFEST_SCHEMA_V1_URI = "https://trpg-master.local/schemas/module-manifest-v1.json";
-export const MANIFEST_SCHEMA_V2_URI = "https://trpg-master.local/schemas/module-manifest-v2.json";
-export const MODULE_SCHEMA_V1_URI = "https://trpg-master.local/schemas/module-v1.json";
-export const MODULE_SCHEMA_V2_URI = "https://trpg-master.local/schemas/module-v2.json";
-export const LOREBOOK_SCHEMA_URI = "https://trpg-master.local/schemas/lorebook-v3.json";
+export const MANIFEST_SCHEMA_V1_URI =
+  "https://trpg-master.local/schemas/module-manifest-v1.json";
+export const MANIFEST_SCHEMA_V2_URI =
+  "https://trpg-master.local/schemas/module-manifest-v2.json";
+export const MODULE_SCHEMA_V1_URI =
+  "https://trpg-master.local/schemas/module-v1.json";
+export const MODULE_SCHEMA_V2_URI =
+  "https://trpg-master.local/schemas/module-v2.json";
+export const LOREBOOK_SCHEMA_URI =
+  "https://trpg-master.local/schemas/lorebook-v3.json";
 
 export type ModuleFormatVersion = "1.0" | "2.0";
 
 export type ModuleCapability =
-  | "custom_skills"
-  | "bundled_characters"
-  | "scene_documents";
+  "custom_skills" | "bundled_characters" | "scene_documents";
 
 export type ClueCategory = "investigation" | "event" | "task" | "npc";
 export type ClueType = "obvious" | "hidden" | "inferred";
 export type EndingType = "good" | "neutral" | "bad" | "secret";
-export type EntityKind = "manifest" | "content" | "skills" | "scene" | "npc" | "clue" | "ending";
+export type EntityKind =
+  | "overview"
+  | "graph"
+  | "preview"
+  | "source"
+  | "manifest"
+  | "content"
+  | "skills"
+  | "scene"
+  | "npc"
+  | "clue"
+  | "ending";
 /** 实体树里以 ID 管理的内容实体（skills 是工程级列表，不在其中）。 */
-export type TreeEntityKind = Exclude<EntityKind, "manifest" | "content" | "skills">;
+export type TreeEntityKind = "scene" | "npc" | "clue" | "ending";
 
 /** 旗标与案件时钟的取值：布尔、整数或短文本。 */
 export type FlagValue = boolean | number | string;
@@ -46,7 +60,8 @@ export interface ModuleManifest {
 }
 
 export interface AssetRevealTrigger {
-  event: "npc_revealed" | "scene_entered" | "clue_discovered" | "sanity_triggered";
+  event:
+    "npc_revealed" | "scene_entered" | "clue_discovered" | "sanity_triggered";
   entity_id: string | null;
   match_all: string[];
   match_any: string[];
@@ -57,7 +72,7 @@ export interface AssetDefinition {
   label: string;
   alt: string;
   media_type: string;
-  reveal_on: AssetRevealTrigger | null;
+  reveal_on: AssetRevealTrigger[];
 }
 
 export interface AssetGroups {

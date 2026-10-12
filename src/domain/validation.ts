@@ -1,22 +1,17 @@
-import Ajv2020, { type ErrorObject } from "ajv/dist/2020.js";
-import manifestV1Schema from "../../schemas/trpgmod/module-manifest-v1.schema.json";
-import manifestV2Schema from "../../schemas/trpgmod/module-manifest-v2.schema.json";
-import moduleV1Schema from "../../schemas/trpgmod/module-v1.schema.json";
-import moduleV2Schema from "../../schemas/trpgmod/module-v2.schema.json";
-import lorebookSchema from "../../schemas/trpgmod/lorebook-v3.schema.json";
+import type { ErrorObject } from "ajv";
+import {
+  validateManifestV1,
+  validateManifestV2,
+  validateModuleV1,
+  validateModuleV2,
+  validateLorebook,
+} from "./generated/schema-validators.js";
 import type {
   Diagnostic,
   EditorProject,
   EntityKind,
   EntitySelection,
 } from "./types";
-
-const ajv = new Ajv2020({ allErrors: true, strict: false });
-const validateManifestV1 = ajv.compile(manifestV1Schema);
-const validateManifestV2 = ajv.compile(manifestV2Schema);
-const validateModuleV1 = ajv.compile(moduleV1Schema);
-const validateModuleV2 = ajv.compile(moduleV2Schema);
-const validateLorebook = ajv.compile(lorebookSchema);
 
 const ENTITY_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 
@@ -44,10 +39,15 @@ function selectionFromPath(path: string): EntitySelection | undefined {
   return undefined;
 }
 
-function schemaDiagnostic(root: "manifest" | "module" | "lorebook", error: ErrorObject, index: number): Diagnostic {
-  const missing = error.keyword === "required" && "missingProperty" in error.params
-    ? `/${String(error.params.missingProperty)}`
-    : "";
+function schemaDiagnostic(
+  root: "manifest" | "module" | "lorebook",
+  error: ErrorObject,
+  index: number,
+): Diagnostic {
+  const missing =
+    error.keyword === "required" && "missingProperty" in error.params
+      ? `/${String(error.params.missingProperty)}`
+      : "";
   const normalizedPath = `${root}${error.instancePath}${missing}`
     .replaceAll("/", ".")
     .replace(/\.([0-9]+)(?=\.|$)/g, "[$1]");
@@ -80,10 +80,14 @@ function schemaMessage(error: ErrorObject): string {
   if (error.keyword === "type" && "type" in error.params) {
     return `字段类型应为 ${String(error.params.type)}`;
   }
-  if (error.keyword === "additionalProperties" && "additionalProperty" in error.params) {
+  if (
+    error.keyword === "additionalProperties" &&
+    "additionalProperty" in error.params
+  ) {
     return `不支持字段 ${String(error.params.additionalProperty)}`;
   }
-  if (error.keyword === "enum" || error.keyword === "const") return "字段值不在允许范围内";
+  if (error.keyword === "enum" || error.keyword === "const")
+    return "字段值不在允许范围内";
   return error.message ?? "字段格式不符合模组 Schema";
 }
 
@@ -113,22 +117,34 @@ export function validateProject(project: EditorProject): Diagnostic[] {
   validateManifest(manifest);
   diagnostics.push(
     ...(validateManifest.errors ?? []).map((error, index) =>
-      schemaDiagnostic("manifest", error, index)),
+      schemaDiagnostic("manifest", error, index),
+    ),
   );
 
   validateModule(module);
   diagnostics.push(
     ...(validateModule.errors ?? []).map((error, index) =>
-      schemaDiagnostic("module", error, index)),
+      schemaDiagnostic("module", error, index),
+    ),
   );
 
   if (project.lorebook !== null && project.lorebook !== undefined) {
     validateLorebook(project.lorebook);
     diagnostics.push(
       ...(validateLorebook.errors ?? []).map((error, index) =>
-        schemaDiagnostic("lorebook", error, index)),
+        schemaDiagnostic("lorebook", error, index),
+      ),
     );
   }
+
+  // 不对不符合结构契约的数组/对象执行语义遍历，避免作者输入使检查器崩溃。
+  if (
+    diagnostics.some(
+      (diagnostic) =>
+        diagnostic.id.startsWith("schema-") && diagnostic.level === "error",
+    )
+  )
+    return diagnostics;
 
   const sceneIds = new Set(Object.keys(module.scenes));
   const npcIds = new Set(Object.keys(module.npcs));
@@ -184,9 +200,11 @@ export function validateProject(project: EditorProject): Diagnostic[] {
           `遭遇 NPC ${encounter.npc_id} 不存在`,
         );
       }
-      if (encounter.availability === "conditional" &&
-          Object.keys(encounter.required_flags).length === 0 &&
-          Object.keys(encounter.forbidden_flags).length === 0) {
+      if (
+        encounter.availability === "conditional" &&
+        Object.keys(encounter.required_flags).length === 0 &&
+        Object.keys(encounter.forbidden_flags).length === 0
+      ) {
         pushDiagnostic(
           diagnostics,
           "error",
@@ -291,7 +309,10 @@ export function validateProject(project: EditorProject): Diagnostic[] {
         "隐藏线索尚未写发现条件",
       );
     }
-    if (clue.initially_known && !module.initial_state.known_clue_ids.includes(clueId)) {
+    if (
+      clue.initially_known &&
+      !module.initial_state.known_clue_ids.includes(clueId)
+    ) {
       pushDiagnostic(
         diagnostics,
         "warning",
@@ -331,7 +352,10 @@ export function validateProject(project: EditorProject): Diagnostic[] {
           );
         } else {
           const alternate = module.clues[fallback.clue_id];
-          if (!alternate.initially_known && alternate.discovery_rules.length === 0) {
+          if (
+            !alternate.initially_known &&
+            alternate.discovery_rules.length === 0
+          ) {
             pushDiagnostic(
               diagnostics,
               "error",
@@ -371,10 +395,20 @@ export function validateProject(project: EditorProject): Diagnostic[] {
   for (const [index, link] of module.clue_links.entries()) {
     const linkPath = `module.clue_links[${index}]`;
     if (!clueIds.has(link.from)) {
-      pushDiagnostic(diagnostics, "error", `${linkPath}.from`, `线索关联起点 ${link.from} 不存在`);
+      pushDiagnostic(
+        diagnostics,
+        "error",
+        `${linkPath}.from`,
+        `线索关联起点 ${link.from} 不存在`,
+      );
     }
     if (!clueIds.has(link.to)) {
-      pushDiagnostic(diagnostics, "error", `${linkPath}.to`, `线索关联终点 ${link.to} 不存在`);
+      pushDiagnostic(
+        diagnostics,
+        "error",
+        `${linkPath}.to`,
+        `线索关联终点 ${link.to} 不存在`,
+      );
     }
   }
 
@@ -467,18 +501,27 @@ export function validateProject(project: EditorProject): Diagnostic[] {
 
   if (project.lorebook) {
     const data = (project.lorebook as { data?: unknown }).data;
-    const entries = data && typeof data === "object"
-      ? (data as { entries?: unknown[] }).entries
-      : undefined;
+    const entries =
+      data && typeof data === "object"
+        ? (data as { entries?: unknown[] }).entries
+        : undefined;
     if (Array.isArray(entries)) {
       entries.forEach((entry, index) => {
         if (typeof entry !== "object" || entry === null) return;
         const record = entry as Record<string, unknown>;
-        const extension = (record.extensions as Record<string, unknown> | undefined)?.trpg_master as
-          | { scene_ids?: unknown; npc_ids?: unknown; required_clue_ids?: unknown }
+        const extension = (
+          record.extensions as Record<string, unknown> | undefined
+        )?.trpg_master as
+          | {
+              scene_ids?: unknown;
+              npc_ids?: unknown;
+              required_clue_ids?: unknown;
+            }
           | undefined;
         if (!extension) return;
-        for (const sceneId of Array.isArray(extension.scene_ids) ? extension.scene_ids : []) {
+        for (const sceneId of Array.isArray(extension.scene_ids)
+          ? extension.scene_ids
+          : []) {
           if (!sceneIds.has(String(sceneId))) {
             pushDiagnostic(
               diagnostics,
@@ -488,7 +531,9 @@ export function validateProject(project: EditorProject): Diagnostic[] {
             );
           }
         }
-        for (const npcId of Array.isArray(extension.npc_ids) ? extension.npc_ids : []) {
+        for (const npcId of Array.isArray(extension.npc_ids)
+          ? extension.npc_ids
+          : []) {
           if (!npcIds.has(String(npcId))) {
             pushDiagnostic(
               diagnostics,
@@ -498,7 +543,9 @@ export function validateProject(project: EditorProject): Diagnostic[] {
             );
           }
         }
-        for (const clueId of Array.isArray(extension.required_clue_ids) ? extension.required_clue_ids : []) {
+        for (const clueId of Array.isArray(extension.required_clue_ids)
+          ? extension.required_clue_ids
+          : []) {
           if (!clueIds.has(String(clueId))) {
             pushDiagnostic(
               diagnostics,
@@ -513,7 +560,12 @@ export function validateProject(project: EditorProject): Diagnostic[] {
   }
 
   if (!manifest.license.trim()) {
-    pushDiagnostic(diagnostics, "warning", "manifest.license", "尚未声明内容许可证");
+    pushDiagnostic(
+      diagnostics,
+      "warning",
+      "manifest.license",
+      "尚未声明内容许可证",
+    );
   }
 
   const skills = project.skills ?? [];
@@ -537,11 +589,21 @@ export function validateProject(project: EditorProject): Diagnostic[] {
         `Skill 名称 ${skill.name || "（空）"} 只能含 1-80 位小写字母/数字/下划线`,
       );
     } else if (seenSkillNames.has(skill.name)) {
-      pushDiagnostic(diagnostics, "error", `${prefix}.name`, `Skill 名称 ${skill.name} 重复`);
+      pushDiagnostic(
+        diagnostics,
+        "error",
+        `${prefix}.name`,
+        `Skill 名称 ${skill.name} 重复`,
+      );
     }
     seenSkillNames.add(skill.name);
     if (!skill.body.trim()) {
-      pushDiagnostic(diagnostics, "error", `${prefix}.body`, "Skill 正文不能为空");
+      pushDiagnostic(
+        diagnostics,
+        "error",
+        `${prefix}.body`,
+        "Skill 正文不能为空",
+      );
     } else if (utf8.encode(skill.body).length > MAX_SKILL_BODY_BYTES) {
       pushDiagnostic(
         diagnostics,
@@ -581,7 +643,12 @@ export function validateProject(project: EditorProject): Diagnostic[] {
     );
   }
   if (!manifest.author.trim()) {
-    pushDiagnostic(diagnostics, "advice", "manifest.author", "尚未填写作者信息");
+    pushDiagnostic(
+      diagnostics,
+      "advice",
+      "manifest.author",
+      "尚未填写作者信息",
+    );
   }
   if (manifest.capabilities.includes("custom_skills")) {
     pushDiagnostic(
@@ -592,6 +659,12 @@ export function validateProject(project: EditorProject): Diagnostic[] {
     );
   }
 
-  const levelOrder: Record<Diagnostic["level"], number> = { error: 0, warning: 1, advice: 2 };
-  return diagnostics.sort((left, right) => levelOrder[left.level] - levelOrder[right.level]);
+  const levelOrder: Record<Diagnostic["level"], number> = {
+    error: 0,
+    warning: 1,
+    advice: 2,
+  };
+  return diagnostics.sort(
+    (left, right) => levelOrder[left.level] - levelOrder[right.level],
+  );
 }

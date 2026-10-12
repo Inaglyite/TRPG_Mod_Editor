@@ -47,6 +47,10 @@ Schema 版本和来源提交，不能只写“与主项目同源”。当前 UI 
    并提供 warning/advice。
 3. TRPG Master 编译 API 返回权威 Pydantic 诊断、`source_path -> output_path` trace 与编译预览。
 
+五份 Schema 由 `scripts/generate-validators.mjs` 预编译成 `src/domain/generated/schema-validators.js`，
+渲染进程直接执行静态校验函数，无需动态生成代码。生成文件是应用依赖的源码，CI 检查其与锁定 Schema
+及当前 AJV 编译结果完全一致；不得手工改写。结构错误先返回诊断，避免继续遍历错误类型的数据。
+
 前端校验不替代服务端。E3 导出时，工程必须重新通过 TRPG Master 的 Pydantic 模型、ZIP 安全、
 checksum、capability 和引擎版本检查。
 
@@ -116,8 +120,9 @@ editor-backend.ts
 ```
 
 `updateProjectSession` 携带 `expected_revision`，409 时抛出 `RevisionConflictError` 并携带服务器
-最新会话供冲突恢复。`.trpgmod` 打包导出与试玩（`exportPackage`/`startPlaytest`）尚未实现，计划在
-E3 通过后端权威 packager/API 完成。
+最新会话供冲突恢复。自动保存、手动保存与打包前保存通过同一队列串行发送，使用最近确认的 revision；
+工程切换后拒绝旧保存响应，保存返回后仅将实际发送的快照标记为已保存。
+`.trpgmod` 打包导出已通过工程 `/export` 端点接通；安装与试玩继续调用后端权威 API。
 
 ### 6.1 桌面宿主（Electron）
 
@@ -127,6 +132,10 @@ IPC handler（系统对话框 + 文件读写）。主进程只暴露白名单方
 `contextIsolation`、`sandbox` 开启，生产构建注入 CSP。工程目录记忆在 `userData/settings.json`，
 由 `electron/projects-dir.ts` 管理（纯逻辑可单测）。自动更新使用 electron-updater（GitHub
 provider），仅对已安装的桌面版启用；dev 运行返回占位状态。
+
+preload 由 `scripts/bundle-preload.mjs` 打包为单文件，将共享 IPC 常量内联，以符合
+[Electron 沙盒的模块加载约束](https://www.electronjs.org/docs/latest/tutorial/sandbox)。开发启动器在每次
+TypeScript 编译成功后重新打包 preload；生产构建也采用相同打包入口。
 
 ## 7. 游戏运行时边界
 
