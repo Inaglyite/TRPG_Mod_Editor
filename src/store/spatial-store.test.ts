@@ -140,6 +140,75 @@ describe("Spatial reference editing", () => {
     expect(connection.costs).toEqual([]);
   });
 
+  it("closes every affected composite condition when an item is deleted", () => {
+    const project = structuredClone(useEditorStore.getState().project);
+    project.module.initial_state.flags.door_found = false;
+    const door = project.module.spatial!.connections.door;
+    const keyRequirement = door.requires;
+    project.module.spatial!.connections = {
+      all_door: {
+        ...door,
+        requires: {
+          op: "all",
+          conditions: [
+            { op: "flag", flag_id: "door_found", value: true },
+            keyRequirement,
+          ],
+        },
+      },
+      any_door: {
+        ...door,
+        requires: {
+          op: "any",
+          conditions: [{ op: "always", value: true }, keyRequirement],
+        },
+      },
+      not_door: {
+        ...door,
+        requires: { op: "not", condition: keyRequirement },
+      },
+      nested_door: {
+        ...door,
+        requires: {
+          op: "all",
+          conditions: [
+            { op: "flag", flag_id: "door_found", value: true },
+            {
+              op: "any",
+              conditions: [
+                { op: "always", value: true },
+                { op: "not", condition: keyRequirement },
+              ],
+            },
+          ],
+        },
+      },
+    };
+    useEditorStore.getState().replaceProject(project, false);
+    useEditorStore.getState().removeSpatialEntity("item", "key");
+    const connections = useEditorStore.getState().project.module.spatial!.connections;
+    for (const id of ["all_door", "any_door", "not_door", "nested_door"]) {
+      expect(connections[id].requires).toEqual({ op: "always", value: false });
+    }
+  });
+
+  it("closes a composite condition instead of dropping a deleted state threshold", () => {
+    const project = structuredClone(useEditorStore.getState().project);
+    project.module.initial_state.flags.door_found = false;
+    project.module.spatial!.connections.door.requires = {
+      op: "all",
+      conditions: [
+        { op: "flag", flag_id: "door_found", value: true },
+        project.module.spatial!.connections.door.requires,
+      ],
+    };
+    useEditorStore.getState().replaceProject(project, false);
+    useEditorStore.getState().removeSpatialEntity("state", "charge", "key");
+    const connection = useEditorStore.getState().project.module.spatial!.connections.door;
+    expect(connection.requires).toEqual({ op: "always", value: false });
+    expect(connection.costs).toEqual([]);
+  });
+
   it("blocks deleting container parents and cleans dependent entities for leaf deletion", () => {
     const project = structuredClone(useEditorStore.getState().project);
     project.module.scenes.house = room();

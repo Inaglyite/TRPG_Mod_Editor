@@ -220,4 +220,24 @@ describe("Spatial v1 validation", () => {
     expect(messages).toContain("重复定义");
     expect(messages).toContain("每个实例数量必须为 1");
   });
+
+  it.each([
+    { initial: 2, minimum: 0, maximum: 1, field: "initial" },
+    { initial: 0, minimum: 1, maximum: 2, field: "initial" },
+    { initial: 1, minimum: 2, maximum: 1, field: "minimum" },
+  ])(
+    "rejects inconsistent numeric state ranges: %j",
+    ({ initial, minimum, maximum, field }) => {
+      const project = spatialFixture();
+      project.module.spatial!.items.charged_key.states.charge = {
+        initial,
+        minimum,
+        maximum,
+      };
+      expect(errors(project)).toContainEqual(expect.objectContaining({
+        path: `module.spatial.items.charged_key.states.charge.${field}`,
+        message: expect.stringContaining(field === "initial" ? "初值" : "下限"),
+      }));
+    },
+  );
 });

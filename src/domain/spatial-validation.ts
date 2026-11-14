@@ -209,6 +209,23 @@ export function validateSpatial(project: EditorProject, push: PushDiagnostic): v
     } else {
       labels.set(item.label, itemId);
     }
+    for (const [stateId, state] of Object.entries(item.states)) {
+      const path = `module.spatial.items.${itemId}.states.${stateId}`;
+      if (state.minimum > state.maximum) {
+        push(
+          "error",
+          `${path}.minimum`,
+          `状态下限 ${state.minimum} 不能大于上限 ${state.maximum}`,
+        );
+      }
+      if (state.initial < state.minimum || state.initial > state.maximum) {
+        push(
+          "error",
+          `${path}.initial`,
+          `状态初值 ${state.initial} 必须在 ${state.minimum}–${state.maximum} 范围内`,
+        );
+      }
+    }
   }
 
   for (const [sceneId, node] of Object.entries(spatial.nodes)) {

@@ -207,14 +207,17 @@ function rewriteCondition(
   parentId?: string,
 ): SpatialCondition | null {
   if (condition.op === "all" || condition.op === "any") {
-    const conditions = condition.conditions
-      .map((child) => rewriteCondition(child, kind, id, next, parentId))
-      .filter((child): child is SpatialCondition => child !== null);
+    const conditions: SpatialCondition[] = [];
+    for (const child of condition.conditions) {
+      const rewritten = rewriteCondition(child, kind, id, next, parentId);
+      if (rewritten === null) return null;
+      conditions.push(rewritten);
+    }
     return conditions.length ? { ...condition, conditions } : alwaysCondition(false);
   }
   if (condition.op === "not") {
     const child = rewriteCondition(condition.condition, kind, id, next, parentId);
-    return child ? { op: "not", condition: child } : alwaysCondition(false);
+    return child ? { op: "not", condition: child } : null;
   }
   if (condition.op === "flag" && kind === "flag" && condition.flag_id === id) {
     return next ? { ...condition, flag_id: next } : null;
@@ -232,7 +235,8 @@ function rewriteCondition(
     if (kind === "state" && condition.item_id === parentId) {
       const states = { ...condition.minimum_states };
       if (id in states) {
-        if (next) states[next] = states[id];
+        if (!next) return null;
+        states[next] = states[id];
         delete states[id];
       }
       return { ...condition, minimum_states: states };

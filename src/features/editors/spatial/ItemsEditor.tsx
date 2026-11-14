@@ -58,7 +58,7 @@ export function ItemsEditor() {
                 aria-label="删除物品"
                 title="删除物品"
                 onClick={() => {
-                  if (window.confirm("删除物品及其条件、效果和通路代价引用？相关条件不会自动变为开放。")) {
+                  if (window.confirm("删除物品及其效果、通路代价引用？包含该物品的条件会整体关闭，需手动重新配置。")) {
                     removeEntity("item", itemId);
                     setRequestedId(null);
                   }
@@ -117,7 +117,7 @@ export function ItemsEditor() {
                       aria-label={`删除状态 ${stateId}`}
                       title="删除状态"
                       onClick={() => {
-                        if (window.confirm(`删除状态 ${stateId} 及其条件/效果引用？`)) {
+                        if (window.confirm(`删除状态 ${stateId} 及其效果引用？包含该状态门槛的条件会整体关闭，需手动重新配置。`)) {
                           removeEntity("state", stateId, itemId);
                         }
                       }}

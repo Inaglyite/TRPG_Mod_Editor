@@ -24,7 +24,8 @@
   `grant_clue` 与 `give_item` 是不同效果，查看信息不会自动取得实物。主线线索需要无检定路径，
   或同一检定动作的成功/失败分支均可授予；失败保底可与真实时钟/物品代价并列。
 - **物品与状态**：编辑 `spatial.items` 的稳定 ID、唯一 label 和数值状态范围。条件读取当前实际持有
-  实例；带状态物品的每个实例数量为 1，多把钥匙不共享 charge。
+  实例；带状态物品的每个实例数量为 1，多把钥匙不共享 charge。编辑器显式校验
+  `minimum ≤ initial ≤ maximum`，并将初值越界或上下限倒置定位到对应字段。
 
 ### 条件与效果
 
@@ -40,7 +41,8 @@
 
 场景、线索、调查点、动作、通路、物品及物品状态重命名会同步更新现有引用。删除实体时会提示影响；
 被删除对象所属的通路与调查点一并清理。父场景或容器入口仍被使用时，删除会被阻止并要求先调整。
-被删除引用所在的空条件组合会安全地变为 `always: false`，不会因删除钥匙条件而意外开放门锁。
+只要条件树的任意层级引用了被删除对象，整条条件就会安全地变为 `always: false`，需由作者明确重配；
+不会只移除钥匙叶条件或清空 `minimum_states` 门槛而意外开放门锁。
 
 Spatial 字段参与同一工程快照、撤销/重做、本地草稿、会话保存、JSON 打开/导出及 `.trpgmod`
 导入/导出。规范化只补模型默认值；所有已声明的嵌套条件与效果均保留。生成的主持说明不是规则正本。
@@ -62,15 +64,8 @@ npm run build:electron
 真实联调使用本体示例包，通过编辑器修改一个房间名和一项钥匙条件，保存并重开会话后导出。
 导出的 `.trpgmod` 再由本体 `tools/module_packager.py` 校验、编译和打包；不需要付费模型或正式环境。
 
-## 给本体维护者的对接反馈
+## 对接复核
 
-未发现 Spatial v1 字段缺项。`docs/SPATIAL_EXAMPLE.md` 的示例命令把源码目录传给了
-`module_packager.py validate`，但当前 CLI 的 `validate` 参数是 `.trpgmod` 文件，会返回
-`not_found: 模组包不存在`。可复现命令：
-
-```bash
-python tools/module_packager.py validate examples/spatial-investigation
-```
-
-应先 `pack examples/spatial-investigation <输出.trpgmod>`，再 `validate <输出.trpgmod>`。
+2026-11-14 接入复核指出的组合条件删除放宽门锁、数值状态跨字段范围漏检均已补上专项测试并修复。
+本体 `docs/SPATIAL_EXAMPLE.md` 也已修正为先 `pack` 再 `validate <包路径>`；当前无遗留契约差异，
 本编辑器分支不修改本体文档或实现。
