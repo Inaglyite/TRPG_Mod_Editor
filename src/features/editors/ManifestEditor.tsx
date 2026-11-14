@@ -15,6 +15,7 @@ const capabilities: Array<{ id: ModuleCapability; label: string }> = [
   { id: "custom_skills", label: "自定义 Skill" },
   { id: "bundled_characters", label: "内置调查员" },
   { id: "scene_documents", label: "场景文档" },
+  { id: "spatial_investigation", label: "空间调查（Spatial v1）" },
 ];
 
 function toForm(manifest: ModuleManifest, openingPrompt: string): ManifestFormValues {

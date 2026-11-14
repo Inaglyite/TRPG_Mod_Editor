@@ -2,6 +2,7 @@
 
 - [项目使用与开发](../README.md)
 - [架构与数据边界](ARCHITECTURE.md)
+- [Spatial v1 空间调查编辑](SPATIAL.md)
 - [开发路线图](ROADMAP.md)
 
 2026-10-12 模组工坊界面与创作流程的效果图、提示词、截图及验收日志保存在仓库外：

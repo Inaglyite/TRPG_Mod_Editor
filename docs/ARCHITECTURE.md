@@ -69,6 +69,14 @@ TRPG Master Pydantic models
 CI 校验 lock 中的哈希、默认工程和迁移 fixture。主项目新增版本时，编辑器先增加只读导入/迁移适配，
 再把新版本设为默认作者格式；不得静默用最新 Schema 解释旧工程。
 
+### 3.2 Spatial v1
+
+`module.spatial` 是 v2 的可选作者态扩展，来源提交及文件 SHA-256 由 schema-lock 固定。编辑器提供
+场景树、显式通路、调查点动作和物品状态四个编辑面，以及受限条件树/效果列表；稳定 ID 重命名与删除
+通过 `domain/spatial.ts` 同步处理引用，`spatial-validation.ts` 对齐本体交叉引用、层级、实例状态、
+真实代价与主线失败保底约束。前端不执行条件、检定或效果，完整规则随既有工程会话和包导出保存。
+使用与专项验收命令见 [Spatial v1 空间调查编辑](SPATIAL.md)。
+
 ## 4. 工程持久化
 
 E0 使用 `.trpgmod-project.json` 作为编辑器草稿交换文件，并在 LocalStorage 保存最近工程。该文件不是

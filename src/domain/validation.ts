@@ -1,4 +1,6 @@
 import type { ErrorObject } from "ajv";
+import { spatialReachableTargets } from "./spatial";
+import { spatialEssentialStatus, validateSpatial } from "./spatial-validation";
 import {
   validateManifestV1,
   validateManifestV2,
@@ -34,6 +36,7 @@ function selectionFromPath(path: string): EntitySelection | undefined {
     };
     return { kind: kindMap[match[1]], id: match[2] };
   }
+  if (path.startsWith("module.spatial")) return { kind: "spatial" };
   if (path.startsWith("manifest")) return { kind: "manifest" };
   if (path.startsWith("skills")) return { kind: "skills" };
   return undefined;
@@ -444,6 +447,12 @@ export function validateProject(project: EditorProject): Diagnostic[] {
     }
   }
 
+  if (isV2) {
+    validateSpatial(project, (level, path, message) =>
+      pushDiagnostic(diagnostics, level, path, message),
+    );
+  }
+
   if (isV2 && module.progression) {
     for (const clueId of module.progression.essential_clue_ids) {
       if (!clueIds.has(clueId)) {
@@ -456,7 +465,19 @@ export function validateProject(project: EditorProject): Diagnostic[] {
         continue;
       }
       const clue = module.clues[clueId];
-      if (!clue.initially_known && clue.discovery_rules.length === 0) {
+      if (clue.initially_known) continue;
+      const spatialStatus = spatialEssentialStatus(module, clueId);
+      if (spatialStatus === "valid") continue;
+      if (spatialStatus === "unsafe") {
+        pushDiagnostic(
+          diagnostics,
+          "error",
+          "module.spatial.points",
+          `主线线索 ${clueId} 的空间检定失败路径缺少保底；请配置失败效果或无检定替代动作`,
+        );
+        continue;
+      }
+      if (clue.discovery_rules.length === 0) {
         pushDiagnostic(
           diagnostics,
           "error",
@@ -480,7 +501,7 @@ export function validateProject(project: EditorProject): Diagnostic[] {
     const frontier = [module.entry_scene_id];
     while (frontier.length > 0) {
       const current = frontier.pop()!;
-      for (const target of module.scenes[current]?.exits ?? []) {
+      for (const target of spatialReachableTargets(module, current)) {
         if (!reachable.has(target)) {
           reachable.add(target);
           frontier.push(target);

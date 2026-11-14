@@ -2,6 +2,7 @@ import { Clapperboard } from "lucide-react";
 import { useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { EditorHeading } from "../../components/EditorHeading";
+import { sceneRemovalBlockers } from "../../domain/spatial";
 import type { SceneDefinition } from "../../domain/types";
 import { useEditorStore } from "../../store/editor-store";
 import { CheckGrid, FormField } from "./FormControls";
@@ -65,7 +66,12 @@ export function SceneEditor({ id }: { id: string }) {
 
   const deleteScene = () => {
     if (id === project.module.entry_scene_id) return;
-    if (window.confirm(`删除场景“${scene.name}”及其引用？`))
+    const blockers = sceneRemovalBlockers(project, id);
+    if (blockers.length) {
+      window.alert(`请先调整这些空间引用：\n${blockers.join("\n")}`);
+      return;
+    }
+    if (window.confirm(`删除场景“${scene.name}”及其通路、调查点和引用？`))
       removeEntity("scene", id);
   };
 

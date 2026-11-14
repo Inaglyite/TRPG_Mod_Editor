@@ -38,6 +38,97 @@ function fillDefaults<T extends object>(
   }
 }
 
+function normalizeSpatialCondition(value: unknown): void {
+  if (!isRecord(value)) return;
+  if (value.op === "always") fillDefaults(value, { value: true });
+  if ((value.op === "all" || value.op === "any") && Array.isArray(value.conditions)) {
+    for (const child of value.conditions) normalizeSpatialCondition(child);
+  }
+  if (value.op === "not") normalizeSpatialCondition(value.condition);
+  if (value.op === "item") fillDefaults(value, { quantity: 1, minimum_states: {} });
+}
+
+function normalizeSpatialEffect(value: unknown): void {
+  if (!isRecord(value)) return;
+  if (value.kind === "give_item") fillDefaults(value, { quantity: 1 });
+  if (value.kind === "advance_clock") fillDefaults(value, { amount: 1 });
+}
+
+/** 仅补 Spatial v1 模型默认值；未知字段保留给 Schema 报告，不做静默裁剪。 */
+function normalizeSpatial(value: unknown): void {
+  if (!isRecord(value)) return;
+  fillDefaults(value, { version: 1, nodes: {}, connections: {}, points: {}, items: {} });
+  if (isRecord(value.nodes)) {
+    for (const node of Object.values(value.nodes)) {
+      if (isRecord(node)) {
+        fillDefaults(node, {
+          kind: "location",
+          parent_scene_id: null,
+          entry_scene_id: null,
+          hidden: false,
+        });
+      }
+    }
+  }
+  if (isRecord(value.items)) {
+    for (const item of Object.values(value.items)) {
+      if (!isRecord(item)) continue;
+      fillDefaults(item, { states: {} });
+      if (!isRecord(item.states)) continue;
+      for (const state of Object.values(item.states)) {
+        if (isRecord(state)) fillDefaults(state, { initial: 0, minimum: 0, maximum: 100 });
+      }
+    }
+  }
+  if (isRecord(value.connections)) {
+    for (const connection of Object.values(value.connections)) {
+      if (!isRecord(connection)) continue;
+      fillDefaults(connection, {
+        bidirectional: false,
+        visible_when: { op: "always", value: true },
+        requires: { op: "always", value: true },
+        remember_unlock: false,
+        costs: [],
+      });
+      normalizeSpatialCondition(connection.visible_when);
+      normalizeSpatialCondition(connection.requires);
+      if (Array.isArray(connection.costs)) {
+        for (const effect of connection.costs) normalizeSpatialEffect(effect);
+      }
+    }
+  }
+  if (isRecord(value.points)) {
+    for (const point of Object.values(value.points)) {
+      if (!isRecord(point)) continue;
+      fillDefaults(point, {
+        description: "",
+        visible_when: { op: "always", value: true },
+        actions: {},
+      });
+      normalizeSpatialCondition(point.visible_when);
+      if (!isRecord(point.actions)) continue;
+      for (const action of Object.values(point.actions)) {
+        if (!isRecord(action)) continue;
+        fillDefaults(action, {
+          aliases: [],
+          requires: { op: "always", value: true },
+          check: null,
+          repeat: false,
+          success: [],
+          failure: [],
+        });
+        normalizeSpatialCondition(action.requires);
+        if (isRecord(action.check)) fillDefaults(action.check, { difficulty: "regular" });
+        for (const branch of [action.success, action.failure]) {
+          if (Array.isArray(branch)) {
+            for (const effect of branch) normalizeSpatialEffect(effect);
+          }
+        }
+      }
+    }
+  }
+}
+
 const NPC_DEFAULTS: Omit<NpcDefinition, "name"> = {
   visible_tags: [],
   secret: "",
@@ -164,6 +255,12 @@ export function normalizeProject(project: EditorProject): EditorProject {
   }
 
   const moduleDef = project.module;
+  normalizeSpatial(moduleDef.spatial);
+  fillDefaults(moduleDef.assets as unknown as Record<string, unknown>, {
+    npcs: {},
+    scenes: {},
+    clues: {},
+  });
   for (const npc of Object.values(moduleDef.npcs))
     fillDefaults(npc as unknown as Record<string, unknown>, NPC_DEFAULTS);
   for (const scene of Object.values(moduleDef.scenes))

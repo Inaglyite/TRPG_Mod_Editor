@@ -1,5 +1,6 @@
 import {
   BookKey,
+  Boxes,
   Braces,
   ChevronDown,
   CircleUserRound,
@@ -161,6 +162,7 @@ export function EntityTree(props: EntityTreeProps) {
   const tools = [
     { kind: "manifest", label: "模组设置", icon: FileText },
     { kind: "content", label: "世界与素材", icon: Settings2 },
+    { kind: "spatial", label: "空间调查", icon: Boxes },
     { kind: "skills", label: "自定义技能", icon: Sparkles },
     { kind: "source", label: "完整源码", icon: Braces },
   ] as const;

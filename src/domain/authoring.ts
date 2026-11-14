@@ -5,6 +5,7 @@ import type {
   TreeEntityKind,
 } from "./types";
 import { parseEditorProject } from "../features/project/project-io";
+import { spatialLeafId, spatialReachableTargets } from "./spatial";
 import { validateProject } from "./validation";
 
 export const entityLabels: Record<TreeEntityKind, string> = {
@@ -22,7 +23,9 @@ export function reachableSceneIds(project: EditorProject): Set<string> {
     if (reached.has(id) || !project.module.scenes[id]) continue;
     reached.add(id);
     queue.push(
-      ...project.module.scenes[id].exits.filter((next) => !reached.has(next)),
+      ...spatialReachableTargets(project.module, id).filter(
+        (next) => !reached.has(next),
+      ),
     );
   }
   return reached;
@@ -112,23 +115,52 @@ export function storyGraph(project: EditorProject, mode: "scene" | "clue") {
       : Object.entries(project.module.clues).map(
           ([id, clue]) => [id, clue.text] as const,
         );
-  const edges: StoryEdge[] =
-    mode === "scene"
-      ? Object.entries(project.module.scenes).flatMap(([id, scene]) =>
-          scene.exits.map((to) => ({ from: id, to, label: "出口" })),
-        )
-      : project.module.clue_links.map((link) => ({
-          from: link.from,
-          to: link.to,
-          label: link.reasoning,
-        }));
+  let edges: StoryEdge[];
+  if (mode === "scene") {
+    const explicitPairs = new Set<string>();
+    const spatialEdges: StoryEdge[] = [];
+    for (const connection of Object.values(project.module.spatial?.connections ?? {})) {
+      const source = spatialLeafId(project.module.spatial!, connection.source_scene_id);
+      const target = spatialLeafId(project.module.spatial!, connection.target_scene_id);
+      const directions = [[source, target]];
+      if (connection.bidirectional) directions.push([target, source]);
+      for (const [from, to] of directions) {
+        const pair = `${from}→${to}`;
+        if (explicitPairs.has(pair)) continue;
+        explicitPairs.add(pair);
+        spatialEdges.push({
+          from,
+          to,
+          label: connection.remember_unlock || connection.costs.length
+            ? "显式通路 · 记住开锁/代价"
+            : connection.requires.op === "always" && connection.requires.value
+              ? "显式通路"
+              : "显式通路 · 有条件",
+        });
+      }
+    }
+    edges = [
+      ...Object.entries(project.module.scenes).flatMap(([id, scene]) =>
+        scene.exits
+          .filter((to) => !explicitPairs.has(`${id}→${to}`))
+          .map((to) => ({ from: id, to, label: "旧出口" })),
+      ),
+      ...spatialEdges,
+    ];
+  } else {
+    edges = project.module.clue_links.map((link) => ({
+      from: link.from,
+      to: link.to,
+      label: link.reasoning,
+    }));
+  }
   const reached = reachableSceneIds(project);
   const layers = new Map<string, number>();
   if (mode === "scene") {
     const queue = [project.module.entry_scene_id];
     layers.set(project.module.entry_scene_id, 0);
     for (let i = 0; i < queue.length; i++) {
-      for (const to of project.module.scenes[queue[i]]?.exits ?? []) {
+      for (const to of spatialReachableTargets(project.module, queue[i])) {
         if (!layers.has(to) && project.module.scenes[to]) {
           layers.set(to, (layers.get(queue[i]) ?? 0) + 1);
           queue.push(to);

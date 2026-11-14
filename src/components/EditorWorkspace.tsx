@@ -6,6 +6,7 @@ import { NpcEditor } from "../features/editors/NpcEditor";
 import { SceneEditor } from "../features/editors/SceneEditor";
 import { SkillsEditor } from "../features/editors/SkillsEditor";
 import { ProjectContentEditor } from "../features/editors/ProjectContentEditor";
+import { SpatialEditor } from "../features/editors/spatial/SpatialEditor";
 import { Overview } from "../features/editors/Overview";
 import { StoryGraph } from "../features/editors/StoryGraph";
 import { PlayerPreview } from "../features/editors/PlayerPreview";
@@ -26,6 +27,7 @@ export function EditorWorkspace({ selection }: { selection: EntitySelection }) {
       <div key={`content:${epoch}`} hidden={selection.kind !== "content"}>
         <ProjectContentEditor />
       </div>
+      {selection.kind === "spatial" && <SpatialEditor />}
       {selection.kind === "skills" && <SkillsEditor />}
       {selection.kind === "scene" && selection.id && (
         <SceneEditor key={selection.id} id={selection.id} />

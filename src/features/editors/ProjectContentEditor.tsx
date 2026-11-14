@@ -330,6 +330,7 @@ export function ProjectContentEditor() {
                       className="row-remove"
                       aria-label={`删除世界旗标 ${name}`}
                       onClick={() => {
+                        if (project.module.spatial && !window.confirm(`删除旗标 ${name} 及相关空间条件/效果引用？`)) return;
                         const flags = { ...state!.flags };
                         delete flags[name];
                         updateState({ ...state!, flags });
@@ -376,11 +377,12 @@ export function ProjectContentEditor() {
             </section>
             <section className="form-section">
               <h2>案件时钟</h2>
+              <p className="section-help">用于 Spatial 的 advance_clock 代价时，必须声明整数上限 max。</p>
               <div className="kv-rows">
                 {Object.entries(state.case_clocks).map(([name, value]) => (
                   <div
                     className="kv-row"
-                    style={{ gridTemplateColumns: "minmax(0, 1fr) 80px 28px" }}
+                    style={{ gridTemplateColumns: "minmax(0, 1fr) 80px 100px 28px" }}
                     key={name}
                   >
                     <input value={name} readOnly />
@@ -400,13 +402,33 @@ export function ProjectContentEditor() {
                           });
                       }}
                     />
+                    <input
+                      type="number"
+                      min={0}
+                      step={1}
+                      value={typeof state.case_clock_definitions?.[name]?.max === "number" ? state.case_clock_definitions[name].max : ""}
+                      aria-label={`时钟 ${name} 上限`}
+                      placeholder="max"
+                      onChange={(event) => {
+                        const definitions = { ...state!.case_clock_definitions };
+                        const definition = { ...definitions[name] };
+                        if (Number.isInteger(event.target.valueAsNumber))
+                          definition.max = event.target.valueAsNumber;
+                        else delete definition.max;
+                        definitions[name] = definition;
+                        updateState({ ...state!, case_clock_definitions: definitions });
+                      }}
+                    />
                     <button
                       className="row-remove"
                       aria-label={`删除时钟 ${name}`}
                       onClick={() => {
+                        if (project.module.spatial && !window.confirm(`删除时钟 ${name} 及相关空间条件/效果引用？`)) return;
                         const clocks = { ...state!.case_clocks };
+                        const definitions = { ...state!.case_clock_definitions };
                         delete clocks[name];
-                        updateState({ ...state!, case_clocks: clocks });
+                        delete definitions[name];
+                        updateState({ ...state!, case_clocks: clocks, case_clock_definitions: definitions });
                       }}
                     >
                       <Trash2 size={14} />

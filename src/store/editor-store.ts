@@ -1,5 +1,18 @@
 import { create } from "zustand";
 import { createDefaultProject } from "../domain/default-project";
+import {
+  createAction,
+  createConnection,
+  createItem,
+  createPoint,
+  defaultNode,
+  enableSpatial as enableSpatialDefinition,
+  isLeafScene,
+  nextSpatialId,
+  rewriteSpatialReferences,
+  sceneRemovalBlockers,
+  SPATIAL_ID_PATTERN,
+} from "../domain/spatial";
 import type {
   ClueDefinition,
   EditorProject,
@@ -10,6 +23,8 @@ import type {
   NpcDefinition,
   SceneDefinition,
   SkillDraft,
+  SpatialDefinition,
+  SpatialEntityKind,
   TreeEntityKind,
 } from "../domain/types";
 import { loadDraft } from "../features/project/project-io";
@@ -44,6 +59,16 @@ interface EditorStore {
   updateClue: (id: string, clue: ClueDefinition) => void;
   updateEnding: (id: string, ending: EndingDefinition) => void;
   updateSkills: (skills: SkillDraft[]) => void;
+  enableSpatial: () => boolean;
+  updateSpatial: (spatial: SpatialDefinition) => void;
+  addSpatialEntity: (kind: SpatialEntityKind, parentId?: string) => string | null;
+  renameSpatialEntity: (
+    kind: SpatialEntityKind,
+    id: string,
+    nextId: string,
+    parentId?: string,
+  ) => boolean;
+  removeSpatialEntity: (kind: SpatialEntityKind, id: string, parentId?: string) => void;
   applyProjectEdit: (project: EditorProject) => void;
   setEntryScene: (id: string) => void;
   setSceneLink: (
@@ -247,6 +272,18 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       project.module.initial_state = content.initialState;
       project.module.assets = content.assets;
       project.module.progression = content.progression;
+      if (project.module.spatial) {
+        for (const flagId of Object.keys(state.project.module.initial_state.flags)) {
+          if (!(flagId in content.initialState.flags)) {
+            rewriteSpatialReferences(project.module.spatial, "flag", flagId, null);
+          }
+        }
+        for (const clockId of Object.keys(state.project.module.initial_state.case_clocks)) {
+          if (!(clockId in content.initialState.case_clocks)) {
+            rewriteSpatialReferences(project.module.spatial, "clock", clockId, null);
+          }
+        }
+      }
       // 编辑器内容是包文件路径的单一事实来源：有正文才声明对应文件。
       project.manifest.keeper_document = project.keeperDocument.trim()
         ? "keeper.md"
@@ -297,6 +334,94 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         return state;
       const project = cloneProject(state.project);
       project.skills = skills;
+      return commit(state, project);
+    }),
+
+  enableSpatial: () => {
+    const state = get();
+    if (state.project.module.format_version !== "2.0") return false;
+    set(commit(state, enableSpatialDefinition(state.project)));
+    return true;
+  },
+
+  updateSpatial: (spatial) =>
+    set((state) => {
+      const project = cloneProject(state.project);
+      project.module.spatial = spatial;
+      return commit(state, project);
+    }),
+
+  addSpatialEntity: (kind, parentId) => {
+    let createdId: string | null = null;
+    set((state) => {
+      const spatial = state.project.module.spatial;
+      if (!spatial) return state;
+      const project = cloneProject(state.project);
+      const target = project.module.spatial!;
+      if (kind === "connection") {
+        if (
+          Object.keys(project.module.scenes).length < 2 ||
+          Object.keys(target.connections).length >= 1024
+        )
+          return state;
+        createdId = nextSpatialId("connection", target.connections);
+        target.connections[createdId] = createConnection(project);
+      } else if (kind === "point") {
+        if (
+          !Object.keys(project.module.scenes).some((id) => isLeafScene(target, id)) ||
+          Object.keys(target.points).length >= 1024
+        )
+          return state;
+        createdId = nextSpatialId("point", target.points);
+        target.points[createdId] = createPoint(project);
+      } else if (kind === "item") {
+        if (Object.keys(target.items).length >= 256) return state;
+        createdId = nextSpatialId("item", target.items);
+        target.items[createdId] = createItem(project);
+      } else if (kind === "action" && parentId && target.points[parentId]) {
+        const actions = target.points[parentId].actions;
+        if (Object.keys(actions).length >= 16) return state;
+        createdId = nextSpatialId("action", actions);
+        actions[createdId] = createAction();
+      } else if (kind === "state" && parentId && target.items[parentId]) {
+        const states = target.items[parentId].states;
+        createdId = nextSpatialId("state", states);
+        states[createdId] = { initial: 0, minimum: 0, maximum: 100 };
+      }
+      return createdId ? commit(state, project) : state;
+    });
+    return createdId;
+  },
+
+  renameSpatialEntity: (kind, id, requestedId, parentId) => {
+    const nextId = requestedId.trim();
+    const state = get();
+    const spatial = state.project.module.spatial;
+    if (!spatial || !SPATIAL_ID_PATTERN.test(nextId)) return false;
+    const collection =
+      kind === "action"
+        ? parentId
+          ? spatial.points[parentId]?.actions
+          : undefined
+        : kind === "state"
+          ? parentId
+            ? spatial.items[parentId]?.states
+            : undefined
+          : spatial[`${kind}s`];
+    if (!collection || !(id in collection) || (nextId !== id && nextId in collection))
+      return false;
+    if (id === nextId) return true;
+    const project = cloneProject(state.project);
+    rewriteSpatialReferences(project.module.spatial!, kind, id, nextId, parentId);
+    set(commit(state, project));
+    return true;
+  },
+
+  removeSpatialEntity: (kind, id, parentId) =>
+    set((state) => {
+      if (!state.project.module.spatial) return state;
+      const project = cloneProject(state.project);
+      rewriteSpatialReferences(project.module.spatial!, kind, id, null, parentId);
       return commit(state, project);
     }),
 
@@ -378,6 +503,9 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
           asset_id: null,
           extensions: {},
         };
+        if (project.module.spatial) {
+          project.module.spatial.nodes[id] = defaultNode();
+        }
       } else if (kind === "npc") {
         id = nextId("npc", project.module.npcs);
         project.module.npcs[id] = {
@@ -431,7 +559,11 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
 
   removeEntity: (kind, id) =>
     set((state) => {
-      if (kind === "scene" && id === state.project.module.entry_scene_id)
+      if (
+        kind === "scene" &&
+        (id === state.project.module.entry_scene_id ||
+          sceneRemovalBlockers(state.project, id).length > 0)
+      )
         return state;
       const project = cloneProject(state.project);
       if (kind === "scene") {
@@ -492,6 +624,9 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         }
       } else {
         delete project.module.endings[id];
+      }
+      if (project.module.spatial && (kind === "scene" || kind === "clue")) {
+        rewriteSpatialReferences(project.module.spatial, kind, id, null);
       }
       rewriteAuthorReferences(project, kind, id, null);
       return commit(state, project, { kind: "overview" });
@@ -573,6 +708,9 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     } else {
       project.module.endings[next] = project.module.endings[id];
       delete project.module.endings[id];
+    }
+    if (project.module.spatial && (kind === "scene" || kind === "clue")) {
+      rewriteSpatialReferences(project.module.spatial, kind, id, next);
     }
     rewriteAuthorReferences(project, kind, id, next);
     set(commit(state, project, { kind, id: next }));

@@ -12,7 +12,10 @@ export const LOREBOOK_SCHEMA_URI =
 export type ModuleFormatVersion = "1.0" | "2.0";
 
 export type ModuleCapability =
-  "custom_skills" | "bundled_characters" | "scene_documents";
+  | "custom_skills"
+  | "bundled_characters"
+  | "scene_documents"
+  | "spatial_investigation";
 
 export type ClueCategory = "investigation" | "event" | "task" | "npc";
 export type ClueType = "obvious" | "hidden" | "inferred";
@@ -24,6 +27,7 @@ export type EntityKind =
   | "source"
   | "manifest"
   | "content"
+  | "spatial"
   | "skills"
   | "scene"
   | "npc"
@@ -187,6 +191,96 @@ export interface ProgressionDefinition {
   essential_clue_ids: string[];
 }
 
+export type SpatialCondition =
+  | { op: "always"; value: boolean }
+  | { op: "all" | "any"; conditions: SpatialCondition[] }
+  | { op: "not"; condition: SpatialCondition }
+  | { op: "flag"; flag_id: string; value: FlagValue }
+  | {
+      op: "item";
+      item_id: string;
+      quantity: number;
+      minimum_states: Record<string, number>;
+    }
+  | { op: "clue"; clue_id: string }
+  | { op: "clock"; clock_id: string; minimum: number }
+  | { op: "completed"; point_id: string; action_id: string };
+
+export type SpatialEffect =
+  | { kind: "grant_clue"; clue_id: string }
+  | { kind: "give_item"; item_id: string; quantity: number }
+  | {
+      kind: "adjust_item_state";
+      item_id: string;
+      state: string;
+      delta: number;
+    }
+  | { kind: "set_flag"; flag_id: string; value: FlagValue }
+  | { kind: "reveal_scene"; scene_id: string }
+  | { kind: "unlock_connection"; connection_id: string }
+  | { kind: "advance_clock"; clock_id: string; amount: number };
+
+export interface SpatialNode {
+  kind: "container" | "location";
+  parent_scene_id: string | null;
+  entry_scene_id: string | null;
+  hidden: boolean;
+}
+
+export interface SpatialConnection {
+  source_scene_id: string;
+  target_scene_id: string;
+  bidirectional: boolean;
+  visible_when: SpatialCondition;
+  requires: SpatialCondition;
+  remember_unlock: boolean;
+  costs: Extract<SpatialEffect, { kind: "adjust_item_state" }>[];
+}
+
+export interface SpatialAction {
+  intent: "examine" | "search" | "read" | "take" | "talk" | "enter" | "use";
+  aliases: string[];
+  requires: SpatialCondition;
+  check: {
+    skill: string;
+    difficulty: "regular" | "hard" | "extreme";
+  } | null;
+  repeat: boolean;
+  success: SpatialEffect[];
+  failure: SpatialEffect[];
+}
+
+export interface SpatialPoint {
+  scene_id: string;
+  name: string;
+  description: string;
+  visible_when: SpatialCondition;
+  actions: Record<string, SpatialAction>;
+}
+
+export interface SpatialItemDefinition {
+  label: string;
+  states: Record<
+    string,
+    { initial: number; minimum: number; maximum: number }
+  >;
+}
+
+export interface SpatialDefinition {
+  version: 1;
+  nodes: Record<string, SpatialNode>;
+  connections: Record<string, SpatialConnection>;
+  points: Record<string, SpatialPoint>;
+  items: Record<string, SpatialItemDefinition>;
+}
+
+export type SpatialEntityKind =
+  | "connection"
+  | "point"
+  | "action"
+  | "item"
+  | "state";
+
 export interface ModuleDefinition {
   $schema: typeof MODULE_SCHEMA_V1_URI | typeof MODULE_SCHEMA_V2_URI;
   format_version: ModuleFormatVersion;
@@ -221,6 +315,7 @@ export interface ModuleDefinition {
     known_clue_ids: string[];
     flags: Record<string, unknown>;
     case_clocks: Record<string, number>;
+    case_clock_definitions?: Record<string, Record<string, unknown>>;
     private_memory: {
       goals_and_plans: string;
       hidden_facts: Record<string, string>;
@@ -231,6 +326,7 @@ export interface ModuleDefinition {
   clue_links: ClueLinkDefinition[];
   extensions: Record<string, unknown>;
   progression?: ProgressionDefinition;
+  spatial?: SpatialDefinition | null;
 }
 
 /**
